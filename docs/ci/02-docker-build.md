@@ -5,7 +5,7 @@ description: The Dockerfiles, the build script, the remote build workflow, and h
 
 # Docker build
 
-GPU CI runs inside `radixark/miles`. This doc maps which Dockerfiles exist, the script that builds them, how the remote build is triggered, and how to build & push manually.
+GPU CI runs inside `radixark/miles`. This doc maps which Dockerfiles exist, the script that builds them, the PR-side build check, how the remote build is triggered, and how to build & push manually.
 
 ## Dockerfiles
 
@@ -56,6 +56,20 @@ The cu13 variants share one CUDA base (`lmsysorg/sglang:v0.5.14`, multi-arch) an
 The **Tag** column is for `--image-tag dev`, which also pushes a timestamped `dev-<YYYYMMDDHHMM>` sibling; `latest` swaps the prefix to `latest`, `custom` uses `--custom-tag`. `cu13` / `cu13-x86` / `cu13-aarch64` intentionally share `radixark/miles:dev` — the daily build runs `cu13` (multi-arch), while a single-arch variant overwrites `dev` with one arch when run alone.
 
 A multi-arch build (`cu13`) needs Buildx's `docker-container` driver and is push-only — buildx writes the manifest straight to the registry, it can't load into the local image store. Use `cu13-x86` / `cu13-aarch64` (single-platform; the arm64 one cross-builds via QEMU on an x86 host) for local single-arch iteration. Other flags: `--push`, `--dry-run`, `--dockerfile`, `--custom-tag`.
+
+## PR build check (in `pr-test.yml`)
+
+Dockerfile changes are build-tested on the PR itself, before merge — `docker-build.yml` only runs after a push to `main`, so without this breakage lands on `main` first.
+
+When a PR touches `docker/Dockerfile`, `docker/build.py`, `docker/patch/**`, or `requirements.txt` (detected by the `docker-paths` job), `pr-test.yml` inserts a build in front of the test matrix:
+
+| Job | What it does |
+| --- | --- |
+| `docker-build` | builds `cu13-x86` and pushes a PR-scoped `radixark/miles:pr-<num>` tag (same-repo PRs; fork PRs skip it and test on `dev`) |
+| `resolve-ci-image` | waits for the build and resolves the CI image to `pr-<num>`, so **every GPU suite runs inside the freshly built image**; a failed build stops the matrix instead of testing the stale image. The fresh build outranks a `ci-image-tag:` PR-body directive — the directive applies only when no PR image was built (non-docker or fork PRs) |
+| `delete-pr-tag` (`docker-pr-tag-cleanup.yml`) | removes the `pr-<num>` tag when the PR closes; the tag stays available for re-runs while the PR is open |
+
+Non-docker PRs are untouched: `docker-paths` reports no change, `docker-build` skips, and the matrix runs on `dev` as before.
 
 ## Remote docker build (`docker-build.yml`)
 
