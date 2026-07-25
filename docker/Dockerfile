@@ -172,6 +172,21 @@ RUN cd /sgl-workspace/sglang && \
     fi && \
     pip install -e "python[all]" --no-deps
 
+# =========================== Mooncake structured object store wheel ===========================
+
+# Miles' Mooncake backend requires the structured object store API. Install the selected
+# CUDA 13 wheel as one coherent Python/native package; CUDA 12 keeps its base Mooncake.
+RUN if [ "${ENABLE_CUDA_13}" = "1" ]; then \
+      set -- /tmp/wheels/mooncake_transfer_engine*-*.whl; \
+      if [ "$#" -ne 1 ] || [ ! -e "$1" ]; then \
+        echo "expected exactly one mooncake wheel for cu13/${TARGETARCH}" >&2; exit 1; \
+      fi && \
+      pip install --force-reinstall --no-deps "$1" && \
+      python3 -c "from mooncake.structured_object_store import FieldSchema, MooncakeBundleTransfer, export_ref, import_ref; MooncakeBundleTransfer.put; MooncakeBundleTransfer.get; MooncakeBundleTransfer.release_result; MooncakeBundleTransfer.cleanup_dataproto"; \
+    else \
+      echo "CUDA 12 variant: keeping the base image's mooncake"; \
+    fi
+
 # ====================================== Install main package ============================================
 
 ARG MILES_COMMIT=main
