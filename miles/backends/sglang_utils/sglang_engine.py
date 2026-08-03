@@ -191,7 +191,6 @@ class SGLangEngine(RayActor):
         host = _format_v6_uri(host)
         ip_part, port_part = dist_init_addr.rsplit(":", 1)
         dist_init_addr = f"{_format_v6_uri(ip_part)}:{port_part}"
-
         server_args_dict, external_engine_need_check_fields = _compute_server_args(
             self.args,
             self.rank,
@@ -726,6 +725,9 @@ def _compute_server_args(
         # always serve /metrics so Prometheus scrapers can read engine stats.
         "enable_metrics": True,
     }
+
+    if os.environ.get("MILES_SGLANG_DUMMY_LOAD") == "1":
+        kwargs["load_format"] = "dummy"
 
     if sglang_overrides:
         kwargs.update(sglang_overrides)

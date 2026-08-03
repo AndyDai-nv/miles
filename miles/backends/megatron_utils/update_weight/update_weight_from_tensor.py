@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import os
 from argparse import Namespace
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
@@ -71,9 +72,10 @@ class UpdateWeightFromTensor:
             self._lora_loaded = False
             self._lora_base_synced = False
 
-        # Create IPC gather groups within megatron.
+        self._mm_tower_cache: list[tuple[str, torch.Tensor]] | None = None
+
         for start_rank in range(0, dist.get_world_size(), self.args.rollout_num_gpus_per_engine):
-            end_rank = start_rank + self.args.rollout_num_gpus_per_engine
+            end_rank = min(start_rank + self.args.rollout_num_gpus_per_engine, dist.get_world_size())
             group_ranks = list(range(start_rank, end_rank))
             new_group = dist.new_group(ranks=group_ranks, backend="gloo")
             if dist.get_rank() in group_ranks:
@@ -229,6 +231,16 @@ class UpdateWeightFromTensor:
                 _check_weight_sync_results(results, is_lora=False)
                 del long_lived_tensors
 
+            mm_tower_tensors = self._mm_tower_named_tensors()
+            if mm_tower_tensors is not None:
+                mm_tower_tensors = [
+                    (name, tensor.to(torch.cuda.current_device())) for name, tensor in mm_tower_tensors
+                ]
+                refs, long_lived_tensors = self._send_base_params(mm_tower_tensors)
+                results = ray.get(refs)
+                _check_weight_sync_results(results, is_lora=False)
+                del long_lived_tensors, mm_tower_tensors
+
         if self.is_lora:
             # SGLang's load_lora_adapter_from_tensors expects the full adapter in
             # one call; drain the bridge's chunker so --update-weight-buffer-size
@@ -262,6 +274,50 @@ class UpdateWeightFromTensor:
                 end_weight_update(self.rollout_engines)
             ray.get([engine.continue_generation.remote() for engine in self.rollout_engines])
         dist.barrier(group=get_gloo_group())
+
+    def _mm_tower_named_tensors(self) -> list[tuple[str, torch.Tensor]] | None:
+        """Frozen vision/audio tower tensors to append to every base sync (see
+        __init__ comment). Returns None when the run has no MM towers. EVERY
+        gather-group rank contributes the full tower set (read once from its local
+        HF checkpoint, the same bytes the engine loaded at boot): the colocated
+        send requires homogeneous per-rank bucket counts (num_dtypes is taken from
+        rank 0 and indexed into every rank's list), so a src-only contribution
+        breaks assembly. The duplicates are ~15MB/rank and load idempotently."""
+        provider = getattr(self.args, "custom_model_provider_path", None) or ""
+        if "inkling_mm_model_provider" not in provider:
+            return None
+        if self._mm_tower_cache is None:
+            if self._ipc_gather_group is not None:
+                import json
+
+                from safetensors import safe_open
+
+                ckpt_dir = self.args.hf_checkpoint
+                with open(os.path.join(ckpt_dir, "model.safetensors.index.json"), encoding="utf-8") as f:
+                    weight_map = json.load(f)["weight_map"]
+                tower_keys = sorted(
+                    k
+                    for k in weight_map
+                    if ".visual." in f".{k}" or ".audio." in f".{k}" or k.startswith(("visual.", "audio."))
+                )
+                by_shard: dict[str, list[str]] = {}
+                for k in tower_keys:
+                    by_shard.setdefault(weight_map[k], []).append(k)
+                cache = []
+                for shard, keys in by_shard.items():
+                    with safe_open(os.path.join(ckpt_dir, shard), framework="pt", device="cpu") as f:
+                        for k in keys:
+                            cache.append((k, f.get_tensor(k)))
+                logger.info(
+                    "mm tower sync: caching %d tower tensors from %s: %s",
+                    len(cache),
+                    ckpt_dir,
+                    [k for k, _ in cache],
+                )
+                self._mm_tower_cache = cache
+            else:
+                self._mm_tower_cache = []
+        return self._mm_tower_cache
 
     def _send_base_params(self, hf_named_tensors) -> tuple[list[ObjectRef], Any]:
         refs, long_lived_tensors = _send_to_colocated_engine(
