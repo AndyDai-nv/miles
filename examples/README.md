@@ -39,4 +39,5 @@ Not fully verified — for experimental and development use.
 - **[reproducibility](./experimental/reproducibility)**: Guides on achieving bitwise experiment reproduction using deterministic modes.
 - **[search-r1](./experimental/search-r1)**: A minimal reproduction of Search-R1, featuring multi-turn conversation and tool-calling.
 - **[strands_sglang](./experimental/strands_sglang)**: Integration example with the Strands-Agents scaffolding framework.
+- **[swe-agent-harbor-daytona](./experimental/swe-agent-harbor-daytona)**: The swe-agent Harbor pipeline with task sandboxes hosted on Daytona instead of local Docker.
 - **[tau-bench](./experimental/tau-bench)**: Training in an agentic multi-turn tool use environment (Tau-bench).
