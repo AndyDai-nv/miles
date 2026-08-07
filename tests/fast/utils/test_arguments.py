@@ -11,6 +11,7 @@ from miles.backends.sglang_utils.arguments import validate_args as validate_sgla
 from miles.utils.arguments import (
     _maybe_apply_dumper_overrides,
     _resolve_ft_components,
+    _validate_rematerialize_param_from_master_weight,
     get_miles_extra_args_provider,
     miles_validate_args,
     resolve_rollout_function_paths,
@@ -695,3 +696,105 @@ class TestValidateAsyncOffPolicyCorrection:
 
     def test_non_ppo_estimators_are_unaffected(self):
         validate_async_off_policy_correction(_make_async_ppo_args(use_critic=False))
+
+
+class TestValidateRematerializeParamFromMasterWeight:
+    def _make_args(self, **overrides) -> SimpleNamespace:
+        args = SimpleNamespace(
+            rematerialize_param_from_master_weight=True,
+            train_backend="megatron",
+            lora_rank=0,
+            lora_adapter_path=None,
+            debug_disable_optimizer=False,
+            indep_dp=False,
+            colocate=True,
+            offload_train=True,
+            offload_train_target="cpu",
+            use_distributed_optimizer=True,
+            enable_weights_backuper=True,
+            keep_old_actor=False,
+            kl_coef=0,
+            use_kl_loss=False,
+            opd_teacher_load=None,
+            use_precision_aware_optimizer=False,
+            optimizer_cpu_offload=False,
+            overlap_param_gather=False,
+            compute_advantages_and_returns=True,
+            num_critic_only_steps=0,
+            debug_train_only=False,
+            ci_test=False,
+            check_rematerialize_param_from_master_weight=False,
+            disable_param_buffers_cpu_backup=False,
+        )
+        for key, value in overrides.items():
+            setattr(args, key, value)
+        return args
+
+    def test_valid_config_forces_no_param_buffer_cpu_backup(self):
+        args = self._make_args()
+        _validate_rematerialize_param_from_master_weight(args)
+        assert args.disable_param_buffers_cpu_backup is True
+
+    def test_accepts_precision_aware_with_cpu_offload(self):
+        args = self._make_args(use_precision_aware_optimizer=True, optimizer_cpu_offload=True)
+        _validate_rematerialize_param_from_master_weight(args)
+        assert args.disable_param_buffers_cpu_backup is True
+
+    def test_ci_test_auto_enables_the_check(self):
+        args = self._make_args(ci_test=True)
+        _validate_rematerialize_param_from_master_weight(args)
+        assert args.check_rematerialize_param_from_master_weight is True
+
+    def test_check_stays_off_outside_ci(self):
+        args = self._make_args()
+        _validate_rematerialize_param_from_master_weight(args)
+        assert args.check_rematerialize_param_from_master_weight is False
+
+    def test_accepts_ref_and_teacher_tags(self):
+        for overrides in ({"use_kl_loss": True}, {"kl_coef": 0.1}, {"opd_teacher_load": "/path/to/teacher"}):
+            _validate_rematerialize_param_from_master_weight(self._make_args(**overrides))
+
+    def test_debug_train_only_silently_disables(self):
+        args = self._make_args(debug_train_only=True, colocate=False)
+        _validate_rematerialize_param_from_master_weight(args)
+        assert args.rematerialize_param_from_master_weight is False
+        assert args.disable_param_buffers_cpu_backup is False
+
+    def test_noop_when_disabled(self):
+        args = self._make_args(rematerialize_param_from_master_weight=False, colocate=False)
+        _validate_rematerialize_param_from_master_weight(args)
+        assert args.disable_param_buffers_cpu_backup is False
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"train_backend": "fsdp"},
+            {"lora_rank": 8},
+            {"lora_adapter_path": "/path/to/adapter"},
+            {"debug_disable_optimizer": True},
+            {"indep_dp": True},
+            {"colocate": False},
+            {"offload_train": False},
+            {"offload_train_target": "disk"},
+            {"use_distributed_optimizer": False},
+            {"enable_weights_backuper": False},
+            {"keep_old_actor": True},
+            {"use_precision_aware_optimizer": True},
+            {"overlap_param_gather": True},
+            {"compute_advantages_and_returns": False},
+            {"num_critic_only_steps": 2},
+        ],
+    )
+    def test_rejects_unsupported_config(self, overrides):
+        with pytest.raises(AssertionError):
+            _validate_rematerialize_param_from_master_weight(self._make_args(**overrides))
+
+    def test_backend_is_checked_before_megatron_only_args(self):
+        # An fsdp Namespace has none of the megatron args the later asserts read.
+        args = SimpleNamespace(
+            rematerialize_param_from_master_weight=True,
+            train_backend="fsdp",
+            debug_train_only=False,
+        )
+        with pytest.raises(AssertionError, match="Megatron"):
+            _validate_rematerialize_param_from_master_weight(args)
