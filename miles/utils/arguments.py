@@ -53,6 +53,10 @@ def _resolve_rollout_functions(args) -> None:
         ), "--fully-async and --rollout-function-path both select a rollout function; pass only one"
         assert not args.colocate, "--fully-async cannot colocate: rollout must keep generating while training runs"
         assert not args.partial_rollout, "--fully-async does not support --partial-rollout"
+        assert args.pause_generation_mode != "abort", (
+            "--fully-async cannot use --pause-generation-mode abort: generation is always in flight, "
+            "so every weight update would kill it and force a full regeneration"
+        )
         assert (
             not args.recompute_logprobs_via_prefill
         ), "--fully-async does not support --recompute-logprobs-via-prefill"
@@ -667,6 +671,42 @@ def get_miles_extra_args_provider(add_custom_arguments=None):
                     "decoupling generation concurrency from the training batch size. None (default) "
                     "keeps the legacy bound of one training batch worth of trajectories "
                     "(rollout_batch_size groups, i.e. rollout_batch_size * n_samples_per_prompt)."
+                ),
+            )
+            parser.add_argument(
+                "--async-data-buffer-capacity-factor",
+                type=float,
+                default=2.0,
+                help=(
+                    "Capacity of the finished-group data buffer between rollout production and "
+                    "training consumption in fully async mode, as a multiple of rollout_batch_size "
+                    "(floor(factor * rollout_batch_size) groups). When the buffer is full the "
+                    "producer blocks until training consumes, so generation cannot run "
+                    "unboundedly ahead of training."
+                ),
+            )
+            parser.add_argument(
+                "--async-unused-samples-handler",
+                type=str,
+                choices=["retry", "drop"],
+                default="drop",
+                help=(
+                    "What to do with a finished group fully async mode does not train on "
+                    "(aborted, or beyond --max-weight-staleness): drop "
+                    "(default) discards the group; retry recycles its prompts into the data "
+                    "source for regeneration. Groups rejected by "
+                    "--dynamic-sampling-filter-path are always dropped."
+                ),
+            )
+            parser.add_argument(
+                "--custom-async-data-buffer-path",
+                type=str,
+                default=None,
+                help=(
+                    "Path to a custom DataBuffer subclass replacing the fully async finished-group "
+                    "data buffer (see miles/rollout/fully_async_data_buffer.py). Constructed with "
+                    "DataBufferConstructorInput; it takes over dataflow/staleness control, so the "
+                    "--async-data-buffer-* args apply only if the custom class reads them."
                 ),
             )
             parser.add_argument(
