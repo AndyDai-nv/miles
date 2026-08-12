@@ -180,10 +180,8 @@ def make_app(
         with _translate_errors():
             _check_window(t0, t1)
             mfu = mfu_summary(store)
-            return dict(
-                advisories=[asdict(a) for a in compute_advisories(store, t0=t0, t1=t1, mfu=mfu, low_mfu=low_mfu)],
-                mfu=mfu,
-            )
+            advisories = compute_advisories(store, reader, t0=t0, t1=t1, mfu=mfu, low_mfu=low_mfu)
+            return dict(advisories=[asdict(a) for a in advisories], mfu=mfu)
 
     @app.get("/api/timeline/heatmap")
     def timeline_heatmap(
