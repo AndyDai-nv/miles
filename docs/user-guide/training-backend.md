@@ -492,7 +492,7 @@ Set `--sglang-router-ip` and `--sglang-router-port` and Miles treats the router 
 ## Further reading
 
 - [Core concepts](/user-guide/concepts): the four objects that make up any Miles job.
-- [Training script walkthrough](/user-guide/training-script-walkthrough): the launch script,
+- [Launch script](/user-guide/launch-script): the launch script,
   argument group by argument group.
 - [Fully Async RL](/user-guide/fully-async): keep generation running continuously so rollout
   never waits on a training step.
