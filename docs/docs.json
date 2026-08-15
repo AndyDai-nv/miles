@@ -279,12 +279,6 @@
      "blog/index",
      "subscribe"
     ]
-   },
-   {
-    "tab": "FAQ",
-    "pages": [
-     "faq"
-    ]
    }
   ]
  },
