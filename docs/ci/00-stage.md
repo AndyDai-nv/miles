@@ -18,8 +18,8 @@ Stage names follow `stage-<tier>-<gpus>-<hw>` (or `stage-<tier>-<hw>` for CPU, e
 
 | Stage / suite | Hardware | Runner labels (`runs_on`) | Shards | Depends on |
 |---|---|---|---|---|
-| `stage-a-cpu` | GitHub-hosted CPU | — (`ubuntu-latest`) | 4 | `resolve-ci-policy`, `resolve-ci-image` |
-| `stage-b-cpu` | GitHub-hosted CPU | — (`ubuntu-latest`) | 1 | `resolve-ci-policy`, `resolve-ci-image` |
+| `stage-a-cpu` | GitHub-hosted CPU | — (`ubuntu-latest`) | 4 | `resolve-ci-policy` |
+| `stage-b-cpu` | GitHub-hosted CPU | — (`ubuntu-latest`) | 1 | `resolve-ci-policy` |
 | `stage-b-2-gpu-h200` | 2× H200 | `["h200","2gpu"]` | 1 | both resolvers, `stage-a-cpu` |
 | `stage-c-2-gpu-h200` | 2× H200 | `["h200","2gpu"]` | 2 | both resolvers, `stage-a-cpu` |
 | `stage-c-4-gpu-h200` | 4× H200 | `["h200","4gpu"]` | 3 | both resolvers, `stage-a-cpu` |
@@ -30,7 +30,7 @@ Stage names follow `stage-<tier>-<gpus>-<hw>` (or `stage-<tier>-<hw>` for CPU, e
 | `nightly-stage-c-4-gpu-mi350` | 4× MI350 | external nightly | — | — |
 | `nightly-stage-c-8-gpu-mi350` | 8× MI350 | external nightly | — | — |
 
-In `pr-test.yml`, `tier a` (CPU fast) gates the NVIDIA GPU fleet after both resolvers; its GPU stages (`b` / `c`) all depend on both resolvers and `stage-a-cpu`, and run concurrently with each other — the `b` / `c` letters classify role, they are not a sequential pipeline. The MI350 stage has no CPU-test gate.
+In `pr-test.yml`, `tier a` (CPU fast) gates PR-image preparation and the NVIDIA GPU fleet; its GPU stages (`b` / `c`) all depend on both resolvers and `stage-a-cpu`, and run concurrently with each other — the `b` / `c` letters classify role, they are not a sequential pipeline. The MI350 stage has no CPU-test gate.
 
 `pr-test.yml` treats `pull_request.closed` as cancellation-only: the close event shares the PR's concurrency group, cancels any queued or running `PR Test` run, and starts no resolver or test jobs.
 
@@ -57,7 +57,7 @@ A **nightly** policy selects every enabled tag except `long` and `ft-long`, admi
 
 `run-ci-all` selects the full domain-tag set without changing cadence. `run-ci-image` selects every enabled tag except `long`, `ft-short`, and `ft-long`. If scope signals overlap, the precedence is `run-ci-all` > weekly/release full scope > nightly > `run-ci-image`. The resolved cadence and raw/synthetic labels are passed to `run_suite.py`, which computes one run policy (see [Labels](/ci/01-label) for the subtraction semantics).
 
-**Dependencies / gating.** In `pr-test.yml`, both CPU stages require both resolvers. Its GPU stages also require both resolvers and, by default, a successful `stage-a-cpu`, so a CPU-test failure short-circuits the expensive NVIDIA fleet. Resolved nightly, weekly, or release cadence and the `bypass-fastfail` PR label relax only the `stage-a-cpu` failure gate and make each suite continue after a test failure; none bypasses resolver failure.
+**Dependencies / gating.** In `pr-test.yml`, both CPU stages require only `resolve-ci-policy`. PR-image preparation is gated by `stage-a-cpu`, and the NVIDIA GPU stages follow image resolution; `stage-b-cpu` stays parallel and does not gate that chain. Resolved nightly, weekly, or release cadence and the `bypass-fastfail` PR label admit the chain after an actual `stage-a-cpu` failure and make each suite continue after a test failure; none bypasses policy or Docker/image failure.
 
 **Runner selection.** CUDA stages request runners by label via `runs_on`, a JSON list passed through to `runs-on` — a runner must carry **all** listed labels (GPU class + count). CPU stages call `_run-cpu-ci.yml`, whose only job runs on GitHub-hosted `ubuntu-latest`, so they don't occupy GPU-fleet slots.
 
