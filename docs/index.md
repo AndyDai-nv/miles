@@ -45,9 +45,6 @@ the largest models all live on Megatron-LM. See
 - **Fault tolerance.** When an SGLang engine dies, Miles
   [recovers it and resumes the run in place](/advanced/fault-tolerance): no restart, no
   pause.
-- **Miles dashboard.** A self-hosted web UI for a run's
-  [training dynamics and compute efficiency](/user-guide/dashboard): what every GPU was
-  doing during a step, and what each trajectory contained at the token level.
 
 ### What Miles runs
 
