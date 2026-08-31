@@ -20,7 +20,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from miles.backends.dynamo_utils.arguments import DYNAMO_UPSTREAM_DEFAULTS
-from miles.backends.dynamo_utils.dynamo_config import DynamoConfig
+from miles.backends.dynamo_utils.dynamo_config import DynamoConfig, compute_dynamo_model_namespace
 
 FRONTEND_MODULE = "dynamo.frontend"
 
@@ -37,8 +37,12 @@ ENV_ENABLE_SGLANG_GENERATE = "DYN_SGLANG_ENABLE_GENERATE"
 ENV_FILE_KV = "DYN_FILE_KV"
 
 
-def compute_dynamo_frontend_args(config: DynamoConfig, *, host: str, port: int) -> dict[str, Any]:
+def compute_dynamo_frontend_args(config: DynamoConfig, *, model_id: str, host: str, port: int) -> dict[str, Any]:
     """The frontend's flag values, before rendering.
+
+    Dynamo's ``<namespace>.backend.generate`` endpoint represents one base
+    model, while a Miles run may serve several rollout models. Deriving the
+    namespace from both the run and model keeps their discovery graphs disjoint.
 
     Returned as a mapping rather than a list so a caller can inspect or override a single
     flag without parsing a command line.
@@ -46,7 +50,7 @@ def compute_dynamo_frontend_args(config: DynamoConfig, *, host: str, port: int) 
     args: dict[str, Any] = {
         "http-host": host,
         "http-port": port,
-        "namespace": config.namespace,
+        "namespace": compute_dynamo_model_namespace(config.namespace, model_id),
         # `None` when the run expressed no preference: dropped by the renderer so dynamo
         # applies its own default rather than miles choosing one for it.
         "discovery-backend": config.discovery_backend,
@@ -90,9 +94,9 @@ def dynamo_frontend_args_to_argv(args: Mapping[str, Any]) -> list[str]:
     return argv
 
 
-def compute_dynamo_frontend_launch_cmd(config: DynamoConfig, *, host: str, port: int) -> str:
+def compute_dynamo_frontend_launch_cmd(config: DynamoConfig, *, model_id: str, host: str, port: int) -> str:
     """The full shell command that starts one model's frontend."""
-    frontend_args = compute_dynamo_frontend_args(config, host=host, port=port)
+    frontend_args = compute_dynamo_frontend_args(config, model_id=model_id, host=host, port=port)
     return shlex.join([sys.executable, "-m", FRONTEND_MODULE, *dynamo_frontend_args_to_argv(frontend_args)])
 
 

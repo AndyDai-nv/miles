@@ -1,5 +1,7 @@
 import argparse
 
+import pytest
+
 from miles.backends.dynamo_utils.arguments import add_dynamo_arguments
 from miles.backends.dynamo_utils.dynamo_config import resolve_dynamo_config
 from miles.backends.dynamo_utils.frontend_args import (
@@ -11,6 +13,8 @@ from miles.backends.dynamo_utils.frontend_args import (
 
 HOST = "10.0.0.7"
 PORT = 30000
+MODEL_ID = "Qwen/Qwen3-8B"
+MODEL_NAMESPACE = "miles-testrun-qwen-qwen3-8b-a82fd547"
 
 
 def _config(*argv: str):
@@ -21,7 +25,9 @@ def _config(*argv: str):
 
 
 def _argv(*argv: str) -> list[str]:
-    return dynamo_frontend_args_to_argv(compute_dynamo_frontend_args(_config(*argv), host=HOST, port=PORT))
+    return dynamo_frontend_args_to_argv(
+        compute_dynamo_frontend_args(_config(*argv), model_id=MODEL_ID, host=HOST, port=PORT)
+    )
 
 
 # ------------------------------- rendered argv -------------------------------
@@ -36,7 +42,7 @@ def test_default_argv_is_exact():
         "--http-port",
         "30000",
         "--namespace",
-        "miles-testrun",
+        MODEL_NAMESPACE,
         "--request-plane",
         "tcp",
         "--event-plane",
@@ -53,7 +59,7 @@ def test_kv_routing_argv_is_exact():
         "--http-port",
         "30000",
         "--namespace",
-        "miles-testrun",
+        MODEL_NAMESPACE,
         "--request-plane",
         "tcp",
         "--event-plane",
@@ -113,7 +119,7 @@ def test_insertion_order_is_preserved():
 
 
 def test_launch_command_is_shell_safe_and_names_the_module():
-    cmd = compute_dynamo_frontend_launch_cmd(_config(), host=HOST, port=PORT)
+    cmd = compute_dynamo_frontend_launch_cmd(_config(), model_id=MODEL_ID, host=HOST, port=PORT)
     assert "-m dynamo.frontend" in cmd
     assert "--http-port 30000" in cmd
 
@@ -121,14 +127,20 @@ def test_launch_command_is_shell_safe_and_names_the_module():
 def test_launch_command_is_deterministic():
     """It has to be: an offline manifest and the live launch must agree."""
     config = _config("--dynamo-router-mode", "kv")
-    assert compute_dynamo_frontend_launch_cmd(config, host=HOST, port=PORT) == compute_dynamo_frontend_launch_cmd(
-        config, host=HOST, port=PORT
-    )
+    assert compute_dynamo_frontend_launch_cmd(
+        config, model_id=MODEL_ID, host=HOST, port=PORT
+    ) == compute_dynamo_frontend_launch_cmd(config, model_id=MODEL_ID, host=HOST, port=PORT)
 
 
-def test_launch_command_quotes_a_hostile_namespace():
-    cmd = compute_dynamo_frontend_launch_cmd(_config("--dynamo-namespace", "a b;rm -rf /"), host=HOST, port=PORT)
-    assert "'a b;rm -rf /'" in cmd
+def test_frontend_requires_a_model_id():
+    with pytest.raises(ValueError, match="model_id must be non-empty"):
+        compute_dynamo_frontend_launch_cmd(_config(), model_id="", host=HOST, port=PORT)
+
+
+def test_different_models_use_different_namespaces():
+    first = compute_dynamo_frontend_args(_config(), model_id=MODEL_ID, host=HOST, port=PORT)
+    second = compute_dynamo_frontend_args(_config(), model_id="Qwen/Qwen3-14B", host=HOST, port=PORT)
+    assert first["namespace"] != second["namespace"]
 
 
 # ------------------------------- environment -------------------------------
@@ -151,3 +163,32 @@ def test_env_carries_the_file_kv_path_only_when_one_was_given():
         _config("--dynamo-discovery-backend", "file", "--dynamo-file-kv-path", "/shared/kv")
     )
     assert env["DYN_FILE_KV"] == "/shared/kv"
+
+
+# ------------------------------- upstream contract -------------------------------
+
+
+def test_rendered_argv_is_accepted_by_installed_dynamo(monkeypatch):
+    """Exercise the real parser in integration images without requiring Dynamo in unit CI."""
+    frontend_args = pytest.importorskip("dynamo.frontend.frontend_args")
+    for name in (
+        "DYN_NAMESPACE",
+        "DYN_DISCOVERY_BACKEND",
+        "DYN_REQUEST_PLANE",
+        "DYN_EVENT_PLANE",
+        "DYN_ROUTER_MODE",
+        "DYN_ROUTER_KV_EVENTS",
+        "DYN_ROUTER_PREDICTED_TTL_SECS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    parser = argparse.ArgumentParser()
+    frontend_args.FrontendArgGroup().add_arguments(parser)
+    parsed = parser.parse_args(_argv("--dynamo-router-mode", "kv", "--dynamo-router-predicted-ttl-secs", "45"))
+
+    assert parsed.namespace == MODEL_NAMESPACE
+    assert parsed.http_host == HOST
+    assert parsed.http_port == PORT
+    assert parsed.router_mode == "kv"
+    assert parsed.use_kv_events is True
+    assert parsed.router_predicted_ttl_secs == 45.0
