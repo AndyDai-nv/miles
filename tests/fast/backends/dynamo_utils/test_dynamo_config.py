@@ -3,9 +3,14 @@ import argparse
 import pytest
 from pydantic import ValidationError
 
-from miles.backends.dynamo_utils.arguments import DYNAMO_UPSTREAM_DEFAULTS, add_dynamo_arguments
+from miles.backends.dynamo_utils.arguments import (
+    DYNAMO_UPSTREAM_DEFAULTS,
+    MILES_ENABLE_RL_DEFAULT,
+    add_dynamo_arguments,
+)
 from miles.backends.dynamo_utils.dynamo_config import (
     DEFAULT_ROUTER_MODE,
+    compute_dynamo_model_namespace,
     is_dynamo_backend,
     resolve_dynamo_config,
 )
@@ -33,15 +38,16 @@ def test_dynamo_args_parse_without_selecting_the_backend():
 
 
 def test_resolve_refuses_a_non_dynamo_run():
-    with pytest.raises(AssertionError, match="only describes runs that actually launch dynamo"):
+    with pytest.raises(ValueError, match="only describes runs that actually launch dynamo"):
         resolve_dynamo_config(_parse())
 
 
 # ------------------------------- defaults -------------------------------
 
 
-# Options miles mirrors: its argparse default must equal dynamo's documented default,
-# so a miles run behaves the same whether or not the flag is passed.
+# Options Miles mirrors from the pinned Dynamo v1.4 contract. This parametrized
+# test checks internal consistency; the optional installed-Dynamo contract test
+# is what can detect an upstream change.
 MIRRORED_DEFAULTS = {
     "dynamo_router_mode": "router-mode",
     "dynamo_router_kv_events": "router-kv-events",
@@ -49,13 +55,12 @@ MIRRORED_DEFAULTS = {
     "dynamo_router_predicted_ttl_secs": "router-predicted-ttl-secs",
     "dynamo_router_min_initial_workers": "router-min-initial-workers",
     "dynamo_router_queue_threshold": "router-queue-threshold",
-    "dynamo_enable_rl": "enable-rl",
 }
 
 
 @pytest.mark.parametrize(("dest", "upstream_flag"), sorted(MIRRORED_DEFAULTS.items()))
 def test_mirrored_defaults_match_dynamo(dest, upstream_flag):
-    """Miles must not invent a default where it mirrors one.
+    """Miles must stay internally consistent with its reviewed upstream pins.
 
     `--dynamo-router-mode` is the exception: dynamo's default is applied by miles rather
     than by dynamo, because the value is also read on the miles side to decide whether the
@@ -67,6 +72,12 @@ def test_mirrored_defaults_match_dynamo(dest, upstream_flag):
         assert parsed is None and DEFAULT_ROUTER_MODE == expected
     else:
         assert parsed == expected
+
+
+def test_enable_rl_is_a_deliberate_miles_override():
+    assert DYNAMO_UPSTREAM_DEFAULTS["enable-rl"] is False
+    assert MILES_ENABLE_RL_DEFAULT is True
+    assert _parse().dynamo_enable_rl is True
 
 
 def test_options_miles_does_not_mirror_stay_unset():
@@ -84,7 +95,7 @@ def test_defaults_are_resolved_not_none():
     assert config.router_mode == DEFAULT_ROUTER_MODE
     assert config.router_kv_events is True
     assert config.router_predicted_ttl_secs is None
-    assert config.enable_rl is False
+    assert config.enable_rl is True
     assert not config.uses_kv_routing
 
     # Everything miles resolves itself must come out concrete; the rest is deliberately unset.
@@ -108,7 +119,37 @@ def test_namespace_is_scoped_to_the_run():
 def test_namespace_falls_back_when_the_launcher_supplied_no_id():
     args = _parse("--rollout-backend", "dynamo")
     del args.run_uuid
-    assert resolve_dynamo_config(args).namespace == "miles"
+    with pytest.raises(ValueError, match="requires a run-scoped namespace"):
+        resolve_dynamo_config(args)
+
+
+@pytest.mark.parametrize("namespace", ["", "UPPER", "has.dot", "a b;rm-rf"])
+def test_invalid_namespace_is_rejected(namespace):
+    with pytest.raises(ValueError, match="must match"):
+        resolve_dynamo_config(_parse("--rollout-backend", "dynamo", "--dynamo-namespace", namespace))
+
+
+def test_invalid_generated_namespace_is_rejected():
+    args = _parse("--rollout-backend", "dynamo")
+    args.run_uuid = "unsafe.uuid"
+    with pytest.raises(ValueError, match="must match"):
+        resolve_dynamo_config(args)
+
+
+def test_model_namespace_is_stable_safe_and_model_scoped():
+    first = compute_dynamo_model_namespace("miles-run", "Qwen/Qwen3-8B")
+    assert first == compute_dynamo_model_namespace("miles-run", "Qwen/Qwen3-8B")
+    assert first.startswith("miles-run-qwen-qwen3-8b-")
+    assert first != compute_dynamo_model_namespace("miles-run", "Qwen/Qwen3-14B")
+
+
+def test_model_namespace_hash_avoids_slug_collisions():
+    assert compute_dynamo_model_namespace("miles-run", "a/b") != compute_dynamo_model_namespace("miles-run", "a b")
+
+
+def test_model_namespace_requires_model_id():
+    with pytest.raises(ValueError, match="model_id must be non-empty"):
+        compute_dynamo_model_namespace("miles-run", "")
 
 
 def test_file_kv_path_is_carried_through_when_requested():
@@ -169,6 +210,11 @@ def test_config_is_immutable():
         config.router_mode = "kv"
 
 
+def test_enable_rl_can_be_disabled_for_launch_debugging():
+    config = resolve_dynamo_config(_parse("--rollout-backend", "dynamo", "--no-dynamo-enable-rl"))
+    assert config.enable_rl is False
+
+
 # ------------------------------- rejected combinations -------------------------------
 
 
@@ -202,5 +248,49 @@ def test_file_kv_path_rejected_for_other_discovery_backends():
                 "etcd",
                 "--dynamo-file-kv-path",
                 "/tmp/whatever",
+            )
+        )
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "-inf"])
+def test_router_ttl_must_be_positive_and_finite(value):
+    with pytest.raises(ValueError, match="must be finite and greater than 0"):
+        resolve_dynamo_config(_parse("--rollout-backend", "dynamo", f"--dynamo-router-ttl-secs={value}"))
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "-inf"])
+def test_predicted_ttl_must_be_positive_and_finite(value):
+    with pytest.raises(ValueError, match="must be finite and greater than 0"):
+        resolve_dynamo_config(
+            _parse(
+                "--rollout-backend",
+                "dynamo",
+                "--dynamo-router-mode",
+                "kv",
+                f"--dynamo-router-predicted-ttl-secs={value}",
+            )
+        )
+
+
+def test_min_initial_workers_must_be_nonnegative():
+    with pytest.raises(ValueError, match="must be at least 0"):
+        resolve_dynamo_config(
+            _parse(
+                "--rollout-backend",
+                "dynamo",
+                "--dynamo-router-min-initial-workers",
+                "-1",
+            )
+        )
+
+
+@pytest.mark.parametrize("value", ["-1", "nan", "inf", "-inf"])
+def test_queue_threshold_must_be_nonnegative_and_finite(value):
+    with pytest.raises(ValueError, match="must be finite and at least 0"):
+        resolve_dynamo_config(
+            _parse(
+                "--rollout-backend",
+                "dynamo",
+                f"--dynamo-router-queue-threshold={value}",
             )
         )

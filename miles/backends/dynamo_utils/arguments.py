@@ -16,9 +16,9 @@ import argparse
 
 # Dynamo v1.4.0 defaults, transcribed from
 # docs/fern/pages/reference/components/{runtime,frontend}-configuration.mdx.
-# `test_dynamo_config.py` asserts miles agrees with every entry, so a dynamo
-# release that moves one of these fails a unit test instead of silently changing
-# how miles deploys.
+# These pins document the upstream contract this integration was reviewed
+# against.  The optional Dynamo contract tests compare them with an installed
+# Dynamo; ordinary Miles unit tests only check our own resolution semantics.
 DYNAMO_UPSTREAM_DEFAULTS = {
     "namespace": "dynamo",
     "discovery-backend": "etcd",
@@ -33,9 +33,15 @@ DYNAMO_UPSTREAM_DEFAULTS = {
     "enable-rl": False,
 }
 
-# Values accepted by dynamo's `--discovery-backend`. `kubernetes` is set automatically by
-# the Dynamo operator; `mem` is single-process only, so miles never selects it by default.
-DISCOVERY_BACKENDS = ("kubernetes", "etcd", "file", "mem")
+# Miles needs Dynamo's tokenizer-manager passthrough for model updates and other
+# rollout control operations. This is intentionally different from Dynamo's
+# inference-only default.
+MILES_ENABLE_RL_DEFAULT = True
+
+# Values usable by Miles' multi-process launcher. Dynamo's `mem` backend is
+# process-local, so a frontend and workers launched as separate subprocesses
+# cannot discover each other through it.
+DISCOVERY_BACKENDS = ("kubernetes", "etcd", "file")
 
 # Values accepted by dynamo.frontend's `--router-mode`.
 ROUTER_MODES = (
@@ -84,8 +90,8 @@ def add_dynamo_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
         help=(
             "How dynamo workers advertise themselves. Left unset the flag is not passed and "
             "dynamo applies its own default ('etcd'); 'file' needs no external service and "
-            "suits a single host or shared storage. Since dynamo v0.8 neither etcd nor NATS "
-            "is required for the request and event planes."
+            "suits a single host or shared storage. NATS is not required for Dynamo's request "
+            "or event planes, but etcd is still required when discovery uses the etcd backend."
         ),
     )
     group.add_argument(
@@ -149,11 +155,12 @@ def add_dynamo_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
     group.add_argument(
         "--dynamo-enable-rl",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=MILES_ENABLE_RL_DEFAULT,
         help=(
-            "Pass --enable-rl to dynamo.sglang workers. On SGLang this registers the "
-            "/engine/call_tokenizer_manager passthrough route and out-of-band meta_info upload; "
-            "the built-in /engine/control/* routes do not need it."
+            "Pass --enable-rl to dynamo.sglang workers (enabled by Miles by default). On SGLang "
+            "this registers the /engine/call_tokenizer_manager passthrough route needed by "
+            "Miles' rollout control path. --no-dynamo-enable-rl is intended only for standalone "
+            "launch/debug scenarios that do not update model state."
         ),
     )
 

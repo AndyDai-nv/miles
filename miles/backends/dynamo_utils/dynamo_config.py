@@ -15,11 +15,14 @@ dynamo applies its own default. See ``DYNAMO_UPSTREAM_DEFAULTS``.
 
 from __future__ import annotations
 
+import hashlib
+import math
+import re
 from typing import Literal
 
 from miles.utils.pydantic_utils import FrozenStrictBaseModel
 
-DiscoveryBackend = Literal["kubernetes", "etcd", "file", "mem"]
+DiscoveryBackend = Literal["kubernetes", "etcd", "file"]
 RouterMode = Literal[
     "round-robin",
     "random",
@@ -32,6 +35,8 @@ RouterMode = Literal[
 
 # Repeated from dynamo rather than chosen by miles; see DYNAMO_UPSTREAM_DEFAULTS.
 DEFAULT_ROUTER_MODE: RouterMode = "round-robin"
+_DYNAMO_NAMESPACE_RE = re.compile(r"^[a-z0-9_-]+$")
+_MODEL_NAMESPACE_SLUG_LENGTH = 32
 
 
 class DynamoConfig(FrozenStrictBaseModel):
@@ -68,13 +73,15 @@ def resolve_dynamo_config(args) -> DynamoConfig:
     contradiction surfaces before any process is launched rather than as a silently
     degraded router.
     """
-    assert is_dynamo_backend(args), (
-        "resolve_dynamo_config was called while --rollout-backend is "
-        f"{getattr(args, 'rollout_backend', 'sglang')!r}; the dynamo configuration only "
-        "describes runs that actually launch dynamo"
-    )
+    if not is_dynamo_backend(args):
+        raise ValueError(
+            "resolve_dynamo_config was called while --rollout-backend is "
+            f"{getattr(args, 'rollout_backend', 'sglang')!r}; the dynamo configuration only "
+            "describes runs that actually launch dynamo"
+        )
 
-    namespace = args.dynamo_namespace or _default_namespace(args)
+    namespace = args.dynamo_namespace if args.dynamo_namespace is not None else _default_namespace(args)
+    namespace = validate_dynamo_namespace(namespace)
     discovery_backend: DiscoveryBackend | None = args.dynamo_discovery_backend
     router_mode: RouterMode = args.dynamo_router_mode or DEFAULT_ROUTER_MODE
 
@@ -97,6 +104,14 @@ def resolve_dynamo_config(args) -> DynamoConfig:
             f"--dynamo-discovery-backend is {discovery_backend!r}. Pass "
             f"--dynamo-discovery-backend file, or drop the path."
         )
+
+    _validate_positive_finite("--dynamo-router-ttl-secs", args.dynamo_router_ttl_secs)
+    if args.dynamo_router_predicted_ttl_secs is not None:
+        _validate_positive_finite("--dynamo-router-predicted-ttl-secs", args.dynamo_router_predicted_ttl_secs)
+    if args.dynamo_router_min_initial_workers < 0:
+        raise ValueError("--dynamo-router-min-initial-workers must be at least 0")
+    if args.dynamo_router_queue_threshold is not None:
+        _validate_nonnegative_finite("--dynamo-router-queue-threshold", args.dynamo_router_queue_threshold)
 
     return DynamoConfig(
         namespace=namespace,
@@ -122,4 +137,41 @@ def _default_namespace(args) -> str:
     for attr in ("run_uuid", "run_id", "wandb_run_name"):
         if value := getattr(args, attr, None):
             return f"miles-{value}"
-    return "miles"
+    raise ValueError(
+        "Dynamo requires a run-scoped namespace, but no --dynamo-namespace, run_uuid, "
+        "run_id, or wandb_run_name was supplied. Pass --dynamo-namespace explicitly."
+    )
+
+
+def validate_dynamo_namespace(namespace: str) -> str:
+    """Validate the namespace before Dynamo rejects it during process startup."""
+    if not namespace or _DYNAMO_NAMESPACE_RE.fullmatch(namespace) is None:
+        raise ValueError("Dynamo namespaces must match ^[a-z0-9-_]+$; " f"got {namespace!r}")
+    return namespace
+
+
+def compute_dynamo_model_namespace(base_namespace: str, model_id: str) -> str:
+    """Return a stable, collision-resistant Dynamo namespace for one model.
+
+    A Dynamo ``<namespace>.backend.generate`` endpoint represents one base
+    model. Miles may launch several rollout models in one run, so model identity
+    must be part of the discovery namespace rather than only the component name.
+    """
+    validate_dynamo_namespace(base_namespace)
+    if not model_id or not model_id.strip():
+        raise ValueError("model_id must be non-empty when deriving a Dynamo namespace")
+
+    normalized = re.sub(r"[^a-z0-9_-]+", "-", model_id.lower()).strip("-_")
+    slug = (normalized or "model")[:_MODEL_NAMESPACE_SLUG_LENGTH].rstrip("-_") or "model"
+    digest = hashlib.sha256(model_id.encode("utf-8")).hexdigest()[:8]
+    return validate_dynamo_namespace(f"{base_namespace}-{slug}-{digest}")
+
+
+def _validate_positive_finite(flag: str, value: float) -> None:
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{flag} must be finite and greater than 0")
+
+
+def _validate_nonnegative_finite(flag: str, value: float) -> None:
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(f"{flag} must be finite and at least 0")
