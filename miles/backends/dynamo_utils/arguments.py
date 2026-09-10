@@ -14,11 +14,16 @@ deliberately differs are marked as such and justified where they are set.
 
 import argparse
 
-# Dynamo v1.4.0 defaults, transcribed from
+# Parser defaults transcribed from Dynamo v1.4.0
 # docs/fern/pages/reference/components/{runtime,frontend}-configuration.mdx.
-# These pins document the upstream contract this integration was reviewed
-# against.  The optional Dynamo contract tests compare them with an installed
-# Dynamo; ordinary Miles unit tests only check our own resolution semantics.
+# The SGLang-native `/generate` frontend route was added later, so the
+# integration as a whole requires at least the commit below. The optional
+# Dynamo contract tests compare both the defaults and route table with an
+# installed build; ordinary Miles unit tests only check our own resolution
+# semantics.
+DYNAMO_SGLANG_GENERATE_MINIMUM_COMMIT = "1c4b411f108c43d8a771889aa1cdc071907e90e1"
+DYNAMO_SGLANG_GENERATE_UPSTREAM_PR = "https://github.com/ai-dynamo/dynamo/pull/11640"
+
 DYNAMO_UPSTREAM_DEFAULTS = {
     "namespace": "dynamo",
     "discovery-backend": "etcd",
