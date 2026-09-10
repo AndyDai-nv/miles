@@ -12,7 +12,6 @@ from miles.backends.dynamo_utils.engine_args import (
     compute_dynamo_engine_argv,
     compute_dynamo_engine_env_vars,
     compute_dynamo_engine_launch_cmd,
-    compute_dynamo_worker_endpoint,
     dynamo_engine_args_to_argv,
 )
 
@@ -29,6 +28,7 @@ SGLANG_ARGV = [
     "2",
     "--trust-remote-code",
 ]
+PREFILL_SGLANG_ARGV = [*SGLANG_ARGV, "--disaggregation-mode", "prefill"]
 
 
 def _config(*argv: str):
@@ -53,7 +53,6 @@ def _kv_events_argv(*, publisher: str = "zmq", endpoint: str = "tcp://*:32000") 
 def test_default_dynamo_args_are_exact():
     assert compute_dynamo_engine_args(_config(), model_id=MODEL_ID) == {
         "namespace": MODEL_NAMESPACE,
-        "endpoint": f"dyn://{MODEL_NAMESPACE}.backend.generate",
         "discovery-backend": None,
         "request-plane": "tcp",
         "event-plane": "zmq",
@@ -66,8 +65,6 @@ def test_default_dynamo_argv_is_exact():
     assert dynamo_engine_args_to_argv(args) == [
         "--namespace",
         MODEL_NAMESPACE,
-        "--endpoint",
-        f"dyn://{MODEL_NAMESPACE}.backend.generate",
         "--request-plane",
         "tcp",
         "--event-plane",
@@ -103,18 +100,36 @@ def test_disabled_rl_is_explicit_even_if_the_parent_environment_enables_it():
     assert "--enable-rl" not in argv
 
 
-def test_different_models_get_disjoint_worker_endpoints():
-    first = compute_dynamo_worker_endpoint(_config(), model_id=MODEL_ID)
-    second = compute_dynamo_worker_endpoint(_config(), model_id="Qwen/Qwen3-14B")
+def test_different_models_get_disjoint_worker_namespaces():
+    first = compute_dynamo_engine_args(_config(), model_id=MODEL_ID)["namespace"]
+    second = compute_dynamo_engine_args(_config(), model_id="Qwen/Qwen3-14B")["namespace"]
     assert first != second
-    assert first == f"dyn://{MODEL_NAMESPACE}.backend.generate"
+    assert first == MODEL_NAMESPACE
+
+
+def test_prefill_worker_leaves_role_specific_endpoint_resolution_to_dynamo():
+    """Dynamo maps SGLang's prefill role to ``prefill.generate`` itself."""
+    argv = compute_dynamo_engine_argv(
+        _config(),
+        model_id=MODEL_ID,
+        sglang_argv=PREFILL_SGLANG_ARGV,
+    )
+    env = compute_dynamo_engine_env_vars(
+        _config(),
+        model_id=MODEL_ID,
+        system_port=30000,
+        sglang_port=31000,
+    )
+
+    assert argv[-len(PREFILL_SGLANG_ARGV) :] == PREFILL_SGLANG_ARGV
+    assert not [token for token in argv if token == "--endpoint" or token.startswith("--endpoint=")]
+    assert "DYN_ENDPOINT" not in env
 
 
 def test_engine_env_is_exact_and_keeps_control_and_sglang_ports_separate():
     assert compute_dynamo_engine_env_vars(_config(), model_id=MODEL_ID, system_port=30000, sglang_port=31000) == {
         "DYN_SYSTEM_PORT": "30000",
         "DYN_NAMESPACE": MODEL_NAMESPACE,
-        "DYN_ENDPOINT": f"dyn://{MODEL_NAMESPACE}.backend.generate",
         "DYN_REQUEST_PLANE": "tcp",
         "DYN_EVENT_PLANE": "zmq",
         "PYTHONHASHSEED": "0",
@@ -259,7 +274,7 @@ def test_rendered_dynamo_args_are_accepted_by_installed_dynamo(monkeypatch):
     parsed = parser.parse_args(rendered)
 
     assert parsed.namespace == MODEL_NAMESPACE
-    assert parsed.endpoint == f"dyn://{MODEL_NAMESPACE}.backend.generate"
+    assert parsed.endpoint is None
     assert parsed.request_plane == "tcp"
     assert parsed.event_plane == "zmq"
     assert parsed.enable_rl is True

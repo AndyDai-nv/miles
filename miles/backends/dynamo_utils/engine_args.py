@@ -23,8 +23,6 @@ from miles.backends.dynamo_utils.arguments import DYNAMO_UPSTREAM_DEFAULTS
 from miles.backends.dynamo_utils.dynamo_config import DynamoConfig, compute_dynamo_model_namespace
 
 DYNAMO_SGLANG_MODULE = "dynamo.sglang"
-DYNAMO_WORKER_COMPONENT = "backend"
-DYNAMO_WORKER_ENDPOINT = "generate"
 
 # Read the same pinned contract as the frontend renderer without making the
 # worker-side module depend on frontend implementation details.
@@ -32,7 +30,6 @@ REQUEST_PLANE = DYNAMO_UPSTREAM_DEFAULTS["request-plane"]
 EVENT_PLANE = DYNAMO_UPSTREAM_DEFAULTS["event-plane"]
 
 ENV_DISCOVERY_BACKEND = "DYN_DISCOVERY_BACKEND"
-ENV_ENDPOINT = "DYN_ENDPOINT"
 ENV_EVENT_PLANE = "DYN_EVENT_PLANE"
 ENV_FILE_KV = "DYN_FILE_KV"
 ENV_NAMESPACE = "DYN_NAMESPACE"
@@ -53,12 +50,6 @@ _DYNAMO_OWNED_FLAGS = frozenset(
 )
 
 
-def compute_dynamo_worker_endpoint(config: DynamoConfig, *, model_id: str) -> str:
-    """Return the discovery endpoint shared by one model's frontend and workers."""
-    namespace = compute_dynamo_model_namespace(config.namespace, model_id)
-    return f"dyn://{namespace}.{DYNAMO_WORKER_COMPONENT}.{DYNAMO_WORKER_ENDPOINT}"
-
-
 def compute_dynamo_engine_args(config: DynamoConfig, *, model_id: str) -> dict[str, Any]:
     """Return only the arguments owned by the Dynamo worker wrapper.
 
@@ -68,7 +59,10 @@ def compute_dynamo_engine_args(config: DynamoConfig, *, model_id: str) -> dict[s
     namespace = compute_dynamo_model_namespace(config.namespace, model_id)
     return {
         "namespace": namespace,
-        "endpoint": compute_dynamo_worker_endpoint(config, model_id=model_id),
+        # Do not set `endpoint`: after parsing the opaque SGLang argv, Dynamo
+        # maps `--disaggregation-mode prefill` to `prefill.generate` and every
+        # other role to `backend.generate`. An explicit endpoint would bypass
+        # that role-aware selection and break PD disaggregation.
         "discovery-backend": config.discovery_backend,
         "request-plane": REQUEST_PLANE,
         "event-plane": EVENT_PLANE,
@@ -139,7 +133,8 @@ def compute_dynamo_engine_env_vars(
     env_vars = {
         ENV_SYSTEM_PORT: str(system_port),
         ENV_NAMESPACE: namespace,
-        ENV_ENDPOINT: compute_dynamo_worker_endpoint(config, model_id=model_id),
+        # DYN_ENDPOINT is intentionally absent for the same role-selection
+        # reason as the omitted `--endpoint` above.
         ENV_REQUEST_PLANE: REQUEST_PLANE,
         ENV_EVENT_PLANE: EVENT_PLANE,
         # SGLang's KV block hashes cross process boundaries. Dynamo also sets
