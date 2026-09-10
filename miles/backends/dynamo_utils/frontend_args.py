@@ -32,7 +32,8 @@ REQUEST_PLANE = DYNAMO_UPSTREAM_DEFAULTS["request-plane"]
 EVENT_PLANE = DYNAMO_UPSTREAM_DEFAULTS["event-plane"]
 
 # Serves SGLang's native `/generate` on the frontend, which is the API NVIDIA documents for
-# SGLang RL rollouts. Without it the frontend only speaks the OpenAI-compatible routes.
+# SGLang RL rollouts. This environment variable and route require Dynamo commit
+# DYNAMO_SGLANG_GENERATE_MINIMUM_COMMIT or later; on v1.4.0 the variable is a silent no-op.
 ENV_ENABLE_SGLANG_GENERATE = "DYN_SGLANG_ENABLE_GENERATE"
 ENV_FILE_KV = "DYN_FILE_KV"
 
@@ -103,9 +104,11 @@ def compute_dynamo_frontend_launch_cmd(config: DynamoConfig, *, model_id: str, h
 def compute_dynamo_frontend_env_vars(config: DynamoConfig) -> dict[str, str]:
     """Environment the frontend process needs on top of its command line.
 
-    ``DYN_SGLANG_ENABLE_GENERATE`` is off in dynamo by default; miles turns it on because
-    serving SGLang's native ``/generate`` is the path NVIDIA documents for SGLang RL
-    rollouts, and it keeps the rollout code on SGLang's own request and response shapes.
+    ``DYN_SGLANG_ENABLE_GENERATE`` is off in Dynamo by default; Miles turns it on because
+    serving SGLang's native ``/generate`` keeps the rollout code on SGLang's own request and
+    response shapes. The integration image must contain the minimum Dynamo commit declared
+    in ``arguments``; the installed-Dynamo contract test starts the real frontend and verifies
+    that the route is mounted.
     """
     env_vars = {ENV_ENABLE_SGLANG_GENERATE: "1"}
     if config.file_kv_path is not None:
