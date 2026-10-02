@@ -9,12 +9,18 @@ def sidecar_launch(
     binding: EngineBinding,
     inherited_env: Mapping[str, str],
     executable: str = "dynamo-sglang-sidecar",
-    system_host: str = "0.0.0.0",
+    system_host: str | None = None,
 ) -> tuple[list[str], dict[str, str]]:
     if binding not in config.engines:
         raise ValueError("engine binding is not part of this run")
     if not executable.strip():
         raise ValueError("sidecar requires an executable")
+    if config.sidecar.system_host is not None:
+        if system_host is not None and system_host != config.sidecar.system_host:
+            raise ValueError("sidecar system host conflicts with its configured listener")
+        system_host = config.sidecar.system_host
+    if system_host is None:
+        system_host = "::" if ":" in binding.sidecar.host else "0.0.0.0"
     listener = Address(host=system_host, port=binding.sidecar.port)
     if listener.host not in ("0.0.0.0", "::", binding.sidecar.host):
         raise ValueError("sidecar system listener does not match the binding")

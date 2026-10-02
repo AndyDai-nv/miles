@@ -86,6 +86,16 @@ def test_foreign_binding():
         sidecar_launch(config, binding=binding, inherited_env={})
 
 
+def test_configured_listener():
+    data = config_dict()
+    data["sidecar"] = {"system_host": "engine-0"}
+    config = DynamoConfig.model_validate(data)
+    _, env = sidecar_launch(config, binding=config.engines[0], inherited_env={})
+    assert env["DYN_SYSTEM_HOST"] == "engine-0"
+    with pytest.raises(ValueError, match="conflicts"):
+        sidecar_launch(config, binding=config.engines[0], inherited_env={}, system_host="0.0.0.0")
+
+
 def test_sidecar_cli_help_contract():
     binary = os.environ.get("MILES_TEST_DYNAMO_SIDECAR_BINARY")
     if binary is None:
