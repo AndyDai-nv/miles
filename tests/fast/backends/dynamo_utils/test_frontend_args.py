@@ -9,10 +9,12 @@ from miles.backends.dynamo_utils.config import Address, DynamoConfig
 from miles.backends.dynamo_utils.frontend_args import frontend_launch
 
 
-def _launch(*, host="0.0.0.0", discovery=None):
+def _launch(*, host="0.0.0.0", discovery=None, frontend=None):
     data = config_dict()
     if discovery is not None:
         data["discovery"] = discovery
+    if frontend is not None:
+        data["frontend"] = frontend
     return frontend_launch(
         DynamoConfig.model_validate(data),
         address=Address(host=host, port=8000),
@@ -41,8 +43,6 @@ def test_frontend_command_and_environment():
         "8000",
         "--namespace",
         "run-a",
-        "--router-mode",
-        "round-robin",
         "--router-min-initial-workers",
         "0",
         "--discovery-backend",
@@ -58,15 +58,10 @@ def test_frontend_command_and_environment():
     assert env["DYN_SGLANG_ENABLE_GENERATE"] == "1"
     assert env["ETCD_ENDPOINTS"] == "http://localhost:2379"
     assert env["PATH"] == "/bin"
-    assert (
-        not {
-            "DYN_NAMESPACE_PREFIX",
-            "DYN_SYSTEM_PORT",
-            "DYN_HTTP_SVC_SGLANG_GENERATE_PATH",
-            "DYN_ROUTER_MIN_INITIAL_WORKERS",
-        }
-        & env.keys()
-    )
+    assert "DYN_NAMESPACE_PREFIX" not in env
+    assert env["DYN_SYSTEM_PORT"] == "8081"
+    assert env["DYN_HTTP_SVC_SGLANG_GENERATE_PATH"] == "/generate"
+    assert env["DYN_ROUTER_MIN_INITIAL_WORKERS"] == "0"
 
 
 def test_ipv6_and_file_discovery(tmp_path):
@@ -87,9 +82,25 @@ def test_missing_interpreter():
         )
 
 
-def test_frontend_cli_contract(monkeypatch):
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {
+            "router_mode": "kv",
+            "extra_args": [
+                "--router-event-threads",
+                "8",
+                "--no-tokenizer-fallback",
+                "--metrics-prefix",
+                "training",
+            ],
+        },
+    ],
+)
+def test_frontend_cli_contract(monkeypatch, options):
     frontend = pytest.importorskip("dynamo.frontend.frontend_args")
-    argv, env = _launch()
+    argv, env = _launch(frontend=options)
     for key in tuple(os.environ):
         if key.startswith("DYN_"):
             monkeypatch.delenv(key)
@@ -101,6 +112,57 @@ def test_frontend_cli_contract(monkeypatch):
     assert parsed.namespace == "run-a"
     assert parsed.namespace_prefix is None
     assert parsed.http_port == 8000
-    assert parsed.router_mode == "round-robin"
+    assert parsed.router_mode == options.get("router_mode", "round-robin")
     assert parsed.min_initial_workers == 0
     assert (parsed.request_plane, parsed.response_plane, parsed.event_plane) == ("tcp", "tcp", "zmq")
+    if options:
+        assert parsed.router_event_threads == 8
+        assert parsed.tokenizer_fallback is False
+        assert parsed.metrics_prefix == "training"
+
+
+def test_native_options_and_environment_reach_frontend():
+    extra = ["--metrics-prefix", "training", "--tls-cert-path=/tls/cert.pem", "--no-tokenizer-fallback"]
+    argv, env = _launch(frontend={"router_mode": "kv", "extra_args": extra, "env": {"DYN_LOG": "debug"}})
+    assert argv[-len(extra) :] == extra
+    assert argv[argv.index("--router-mode") + 1] == "kv"
+    assert env["DYN_ROUTER_MODE"] == "kv"
+    assert env["DYN_LOG"] == "debug"
+
+
+def test_router_mode_can_use_native_cli_or_env_when_typed_field_is_unset():
+    argv, env = _launch(frontend={"extra_args": ["--router-mode", "least-loaded"], "env": {"DYN_ROUTER_MODE": "kv"}})
+    assert argv.count("--router-mode") == 1
+    assert argv[-1] == "least-loaded"
+    assert env["DYN_ROUTER_MODE"] == "kv"
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "--namespace=wrong",
+        "--namespace-prefix",
+        "--http-p",
+        "--router-min-initial-workers=1",
+        "--request-plane",
+        "--interactive",
+        "-i",
+    ],
+)
+def test_frontend_owned_flags_cannot_be_overridden(flag):
+    with pytest.raises(ValueError, match="managed"):
+        _launch(frontend={"extra_args": [flag]})
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"router_mode": "kv", "extra_args": ["--router-mode", "random"]},
+        {"router_mode": "kv", "env": {"DYN_ROUTER_MODE": "random"}},
+        {"env": {"DYN_SGLANG_ENABLE_GENERATE": "0"}},
+        {"env": {"DYN_HTTP_SVC_SGLANG_GENERATE_PATH": "/other"}},
+    ],
+)
+def test_conflicting_frontend_configuration(options):
+    with pytest.raises(ValueError):
+        _launch(frontend=options)
