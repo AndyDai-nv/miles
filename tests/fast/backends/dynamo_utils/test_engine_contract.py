@@ -23,7 +23,7 @@ def test_native_tp2_overrides_are_immutable_and_idempotent():
     assert args["incremental_streaming_output"] is True
     assert args["base_gpu_id"] == 2
     assert args["mem_fraction_static"] == 0.7
-    assert args["sidecar"] is None
+    assert "sidecar" not in args
     assert configure_engine_args(config, binding=config.engines[0], overrides=args) == args
     validate_engine_info(config, binding=config.engines[0], server_info=args)
 
@@ -37,22 +37,10 @@ def test_native_tp2_overrides_are_immutable_and_idempotent():
         ("tp_size", 4),
         ("incremental_streaming_output", False),
         ("incremental_streaming_output", 1),
-        ("tokenizer_worker_num", 2),
-        ("dp_size", 2),
-        ("pp_size", 2),
-        ("nnodes", 2),
-        ("node_rank", 1),
-        ("enable_dp_attention", True),
-        ("enable_lora", True),
-        ("disaggregation_mode", "prefill"),
         ("smg_grpc_mode", True),
         ("grpc_mode", True),
-        ("use_ray", True),
-        ("encoder_only", True),
         ("sidecar", "dynamo.sglang.sidecar"),
         ("sidecar_args", []),
-        ("api_key", "secret"),
-        ("admin_api_key", "secret"),
         ("host", "wrong-host"),
     ],
 )
@@ -70,8 +58,6 @@ def test_conflicting_options_fail_before_launch(name, value):
         "grpc_port",
         "tp_size",
         "incremental_streaming_output",
-        "tokenizer_worker_num",
-        "smg_grpc_mode",
         "host",
     ],
 )
@@ -108,3 +94,39 @@ def test_ipv6_binding():
     config = DynamoConfig.model_validate(data)
     args = configure_engine_args(config, binding=config.engines[0], overrides={"host": "::"})
     validate_engine_info(config, binding=config.engines[0], server_info=args)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"dp_size": 2, "enable_dp_attention": True},
+        {"pp_size": 2},
+        {"nnodes": 2, "node_rank": 1},
+        {"enable_lora": True},
+        {"disaggregation_mode": "prefill"},
+        {"grpc_worker_threads": 16, "tokenizer_worker_num": 1},
+    ],
+)
+def test_engine_tuning_is_passed_to_sglang_not_pinned_to_example(overrides):
+    config = _config()
+    result = configure_engine_args(config, binding=config.engines[0], overrides=overrides)
+    for key, value in overrides.items():
+        assert result[key] == value
+    validate_engine_info(config, binding=config.engines[0], server_info=result)
+
+
+def test_adapter_only_adds_integration_owned_settings():
+    config = _config()
+    result = configure_engine_args(config, binding=config.engines[0], overrides={})
+    assert set(result) == {"host", "model_path", "port", "grpc_port", "tp_size", "incremental_streaming_output"}
+
+
+@pytest.mark.parametrize(
+    "field,value", [("smg_grpc_mode", True), ("grpc_mode", True), ("sidecar", "embedded"), ("sidecar_args", [])]
+)
+def test_external_readback_rejects_wrong_protocol_or_second_sidecar(field, value):
+    config = _config()
+    result = configure_engine_args(config, binding=config.engines[0], overrides={})
+    result[field] = value
+    with pytest.raises(ValueError):
+        validate_engine_info(config, binding=config.engines[0], server_info=result)

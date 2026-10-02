@@ -2,25 +2,6 @@ from collections.abc import Mapping
 
 from miles.backends.dynamo_utils.config import Address, DynamoConfig, EngineBinding
 
-_SUPPORTED_OPTIONS = {
-    "dp_size": 1,
-    "pp_size": 1,
-    "nnodes": 1,
-    "node_rank": 0,
-    "tokenizer_worker_num": 1,
-    "disaggregation_mode": "null",
-    "enable_dp_attention": False,
-    "enable_lora": False,
-    "smg_grpc_mode": False,
-    "grpc_mode": False,
-    "use_ray": False,
-    "encoder_only": False,
-    "api_key": None,
-    "admin_api_key": None,
-    "sidecar": None,
-    "sidecar_args": None,
-}
-
 
 def configure_engine_args(
     config: DynamoConfig, *, binding: EngineBinding, overrides: Mapping[str, object]
@@ -33,18 +14,23 @@ def configure_engine_args(
             raise ValueError(f"SGLang {name} conflicts with the sidecar launch contract")
         result[name] = value
     result.setdefault("host", "::" if ":" in binding.http.host else "0.0.0.0")
-    for name, value in _SUPPORTED_OPTIONS.items():
-        result.setdefault(name, value)
     validate_engine_info(config, binding=binding, server_info=result)
     return result
 
 
 def validate_engine_info(config: DynamoConfig, *, binding: EngineBinding, server_info: Mapping[str, object]) -> None:
     """Check resolved server-info fields, not RPC availability or serving admission."""
-    required = {**_required_args(config, binding=binding), **_SUPPORTED_OPTIONS}
+    required = _required_args(config, binding=binding)
     for name, expected in required.items():
         if name not in server_info or not _matches(server_info[name], expected):
             raise ValueError(f"SGLang {name} does not satisfy the sidecar launch contract")
+    # Legacy gRPC takes precedence over grpc_port; an embedded sidecar would create
+    # a second lifecycle owner. SGLang itself validates other native-gRPC constraints.
+    for name in ("smg_grpc_mode", "grpc_mode"):
+        if server_info.get(name):
+            raise ValueError(f"SGLang {name} selects legacy gRPC, not the native sidecar protocol")
+    if server_info.get("sidecar") is not None or server_info.get("sidecar_args") is not None:
+        raise ValueError("Miles launches a standalone sidecar; SGLang sidecar/sidecar_args must be unset")
     listener = Address(host=server_info.get("host", ""), port=binding.http.port)
     if listener.host not in ("0.0.0.0", "::", binding.http.host):
         raise ValueError("SGLang listener does not match the engine binding")
