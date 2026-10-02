@@ -94,6 +94,7 @@ class LaunchOptions(FrozenStrictBaseModel):
 
 
 class FrontendConfig(LaunchOptions):
+    address: Address | None = None
     # None leaves the choice to native CLI/env/default precedence.
     router_mode: (
         Literal["round-robin", "random", "power-of-two", "kv", "direct", "least-loaded", "device-aware-weighted"]
@@ -102,6 +103,7 @@ class FrontendConfig(LaunchOptions):
 
 
 class SidecarConfig(LaunchOptions):
+    system_host: str | None = None
     grpc_connections: Annotated[int, Field(strict=True, gt=0)] | None = None
     grpc_connect_attempt_timeout_secs: Annotated[int, Field(strict=True, gt=0)] | None = None
     grpc_retry_interval_secs: Annotated[int, Field(strict=True, gt=0)] | None = None
