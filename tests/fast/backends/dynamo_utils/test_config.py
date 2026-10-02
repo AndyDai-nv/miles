@@ -3,7 +3,14 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from miles.backends.dynamo_utils.config import Address, DynamoConfig, load_dynamo_config, runtime_env
+from miles.backends.dynamo_utils.config import (
+    Address,
+    DynamoConfig,
+    LaunchOptions,
+    launch_args,
+    load_dynamo_config,
+    runtime_env,
+)
 
 
 def config_dict():
@@ -117,6 +124,7 @@ def test_runtime_env_is_explicit_and_does_not_mutate_input():
         "DYN_NAMESPACE_PREFIX": "other",
         "DYN_REQUEST_PLANE": "nats",
         "DYN_SYSTEM_PORT": "9000",
+        "DYN_LOG": "debug",
         "DYN_NAMESPACE_WORKER_SUFFIX": "old",
         "ETCD_ENDPOINTS": "wrong",
     }
@@ -125,6 +133,8 @@ def test_runtime_env_is_explicit_and_does_not_mutate_input():
     assert inherited == before
     assert env == {
         "PATH": "/bin",
+        "DYN_SYSTEM_PORT": "9000",
+        "DYN_LOG": "debug",
         "DYN_NAMESPACE": "run-a",
         "DYN_DISCOVERY_BACKEND": "etcd",
         "DYN_REQUEST_PLANE": "tcp",
@@ -143,4 +153,73 @@ def test_file_discovery(tmp_path):
     assert "ETCD_ENDPOINTS" not in env
     data["discovery"]["root"] = "relative"
     with pytest.raises(ValidationError, match="absolute"):
+        DynamoConfig.model_validate(data)
+
+
+def test_shared_planes_and_environment_precedence():
+    data = config_dict()
+    data.update(request_plane="nats", response_plane="quic", event_plane="nats", env={"DYN_LOG": "info"})
+    config = DynamoConfig.model_validate(data)
+    options = LaunchOptions(env={"DYN_LOG": "debug", "NATS_SERVER": "nats://cluster:4222"})
+    inherited = {"DYN_LOG": "warn", "DYN_TCP_TLS_CA_CERT_PATH": "/tls/ca.pem", "PATH": "/bin"}
+    env = runtime_env(config, inherited_env=inherited, options=options)
+    assert env["DYN_LOG"] == "debug"
+    assert env["DYN_TCP_TLS_CA_CERT_PATH"] == "/tls/ca.pem"
+    assert env["NATS_SERVER"] == "nats://cluster:4222"
+    assert (env["DYN_REQUEST_PLANE"], env["DYN_RESPONSE_PLANE"], env["DYN_EVENT_PLANE"]) == ("nats", "quic", "nats")
+    assert inherited["DYN_LOG"] == "warn"
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["DYN_NAMESPACE", "DYN_NAMESPACE_PREFIX", "DYN_NAMESPACE_WORKER_SUFFIX", "DYN_REQUEST_PLANE", "ETCD_ENDPOINTS"],
+)
+@pytest.mark.parametrize("scope", ["shared", "process"])
+def test_explicit_environment_cannot_change_owned_settings(key, scope):
+    data = config_dict()
+    override = {key: "conflict"}
+    if scope == "shared":
+        data["env"] = override
+    config = DynamoConfig.model_validate(data)
+    options = LaunchOptions(env=override if scope == "process" else {})
+    with pytest.raises(ValueError, match=key):
+        runtime_env(config, inherited_env={}, options=options)
+
+
+@pytest.mark.parametrize(
+    "token", ["--namespace", "--namespace=other", "--names", "--no-namespace", "--", "-h", "--help", "--version"]
+)
+def test_native_arguments_cannot_override_managed_options(token):
+    with pytest.raises(ValueError, match="managed"):
+        launch_args(LaunchOptions(extra_args=(token,)), managed={"--namespace": "run-a"})
+
+
+def test_native_arguments_preserve_tokens_and_repeated_flags():
+    options = LaunchOptions(
+        extra_args=(
+            "--metrics-prefix=training",
+            "--frontend-route-extension",
+            "a:b",
+            "--frontend-route-extension",
+            "c:d",
+            "--no-tokenizer-fallback",
+        )
+    )
+    assert launch_args(options, managed={"--namespace": "run-a"}) == ["--namespace", "run-a", *options.extra_args]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "grpc_connections",
+        "grpc_connect_attempt_timeout_secs",
+        "grpc_retry_interval_secs",
+        "grpc_startup_deadline_secs",
+    ],
+)
+@pytest.mark.parametrize("value", [0, -1, True, "8"])
+def test_invalid_grpc_transport_settings(field, value):
+    data = config_dict()
+    data["sidecar"] = {field: value}
+    with pytest.raises(ValidationError):
         DynamoConfig.model_validate(data)
