@@ -82,6 +82,25 @@ def test_missing_interpreter():
         )
 
 
+def test_configured_listener():
+    data = config_dict()
+    data["frontend"] = {"address": {"host": "::", "port": 9000}}
+    config = DynamoConfig.model_validate(data)
+    argv, env = frontend_launch(config, interpreter_prefix=["python"], inherited_env={})
+    assert argv[argv.index("--http-host") + 1] == "::"
+    assert argv[argv.index("--http-port") + 1] == "9000"
+    assert env["DYN_HTTP_PORT"] == "9000"
+    with pytest.raises(ValueError, match="conflicts"):
+        frontend_launch(
+            config, address=Address(host="localhost", port=8000), interpreter_prefix=["python"], inherited_env={}
+        )
+
+
+def test_missing_listener():
+    with pytest.raises(ValueError, match="address"):
+        frontend_launch(DynamoConfig.model_validate(config_dict()), interpreter_prefix=["python"], inherited_env={})
+
+
 @pytest.mark.parametrize(
     "options",
     [
