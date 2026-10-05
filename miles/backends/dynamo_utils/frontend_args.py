@@ -22,7 +22,7 @@ def frontend_launch(
         "--http-host": address.host,
         "--http-port": str(address.port),
         "--namespace": config.namespace,
-        # The controller must publish initial weights before any worker can register.
+        # Frontend startup must not depend on worker discovery or initial weight sync.
         "--router-min-initial-workers": "0",
         "--discovery-backend": config.discovery.backend,
         "--request-plane": config.request_plane,
