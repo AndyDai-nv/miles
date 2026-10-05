@@ -9,13 +9,13 @@ from miles.backends.dynamo_utils.config import DynamoConfig
 from miles.backends.dynamo_utils.sidecar_args import sidecar_launch
 
 
-def test_standalone_managed_command_and_environment():
+def test_standalone_upstream_command_and_environment():
     config = DynamoConfig.model_validate(config_dict())
     inherited = {
         "PATH": "/bin",
         "DYN_NAMESPACE_WORKER_SUFFIX": "wrong",
-        "DYN_SGLANG_CONTROLLER_MANAGED": "false",
-        "DYN_SGLANG_UNREGISTER_ON_PAUSE": "false",
+        "DYN_SGLANG_CONTROLLER_MANAGED": "true",
+        "DYN_SGLANG_UNREGISTER_ON_PAUSE": "true",
         "DYN_SGLANG_POLICY_VERSION_TAINTS": "true",
         "DYN_ENABLE_RL": "true",
         "DYN_SYSTEM_PORT": "9000",
@@ -38,17 +38,14 @@ def test_standalone_managed_command_and_environment():
         "generate",
         "--grpc-endpoint",
         "http://engine-0:30001",
-        "--controller-managed",
-        "--unregister-on-pause",
-        "true",
     ]
     assert shlex.split(shlex.join(argv)) == argv
     assert env["DYN_SYSTEM_HOST"] == "0.0.0.0"
     assert env["DYN_SYSTEM_PORT"] == "8081"
-    assert env["DYN_SGLANG_POLICY_VERSION_TAINTS"] == "true"
+    assert "DYN_SGLANG_POLICY_VERSION_TAINTS" not in env
     assert env["DYN_ENABLE_RL"] == "true"
-    assert env["DYN_SGLANG_CONTROLLER_MANAGED"] == "true"
-    assert env["DYN_SGLANG_UNREGISTER_ON_PAUSE"] == "true"
+    assert "DYN_SGLANG_CONTROLLER_MANAGED" not in env
+    assert "DYN_SGLANG_UNREGISTER_ON_PAUSE" not in env
     assert env["DYN_REQUEST_PLANE"] == env["DYN_RESPONSE_PLANE"] == "tcp"
     assert env["DYN_EVENT_PLANE"] == "zmq"
     assert "DYN_NAMESPACE_WORKER_SUFFIX" not in env
@@ -99,21 +96,21 @@ def test_configured_listener():
 def test_sidecar_cli_help_contract():
     binary = os.environ.get("MILES_TEST_DYNAMO_SIDECAR_BINARY")
     if binary is None:
-        pytest.skip("set MILES_TEST_DYNAMO_SIDECAR_BINARY to a controller-managed sidecar build")
+        pytest.skip("set MILES_TEST_DYNAMO_SIDECAR_BINARY to an upstream sidecar build")
     data = config_dict()
     data["sidecar"] = {
         "grpc_connections": 16,
         "grpc_connect_attempt_timeout_secs": 20,
         "grpc_retry_interval_secs": 2,
         "grpc_startup_deadline_secs": 900,
-        "extra_args": ["--bootstrap-host", "worker-a", "--dyn-tool-call-parser", "qwen25", "--policy-version-taints"],
+        "extra_args": ["--bootstrap-host", "worker-a", "--dyn-tool-call-parser", "qwen25"],
     }
     config = DynamoConfig.model_validate(data)
     argv, env = sidecar_launch(config, binding=config.engines[0], inherited_env=os.environ, executable=binary)
     result = subprocess.run([*argv, "--help"], env=env, capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
-    assert "--controller-managed" in result.stdout
-    assert "--unregister-on-pause" in result.stdout
+    assert "--grpc-endpoint" in result.stdout
+    assert "--grpc-startup-deadline-secs" in result.stdout
 
 
 def test_native_transport_and_model_options():
@@ -124,7 +121,7 @@ def test_native_transport_and_model_options():
         "grpc_retry_interval_secs": 2,
         "grpc_startup_deadline_secs": 900,
         "extra_args": ["--bootstrap-host", "worker-a", "--exclude-tools-when-tool-choice-none", "false"],
-        "env": {"DYN_LOG": "debug", "DYN_SGLANG_POLICY_VERSION_TAINTS": "true"},
+        "env": {"DYN_LOG": "debug"},
     }
     config = DynamoConfig.model_validate(data)
     argv, env = sidecar_launch(config, binding=config.engines[0], inherited_env={})
@@ -134,7 +131,6 @@ def test_native_transport_and_model_options():
             assert env[f"DYN_SIDECAR_{field.upper()}"] == str(value)
     assert argv[-4:] == data["sidecar"]["extra_args"]
     assert env["DYN_LOG"] == "debug"
-    assert env["DYN_SGLANG_POLICY_VERSION_TAINTS"] == "true"
 
 
 def test_native_cli_and_env_defaults_are_not_overridden():
@@ -158,6 +154,9 @@ def test_native_cli_and_env_defaults_are_not_overridden():
         "--controller-managed=false",
         "--no-controller-managed",
         "--unregister-on-pause=false",
+        "--policy-version-taints",
+        "--defer-serving",
+        "--require-weight-version-fence",
         "--component",
         "--endpoint",
     ],
@@ -177,6 +176,7 @@ def test_sidecar_owned_flags_cannot_be_overridden(flag):
         {"grpc_connections": 16, "env": {"DYN_SIDECAR_GRPC_CONNECTIONS": "8"}},
         {"env": {"DYN_SGLANG_CONTROLLER_MANAGED": "false"}},
         {"env": {"DYN_SGLANG_UNREGISTER_ON_PAUSE": "false"}},
+        {"env": {"DYN_SGLANG_POLICY_VERSION_TAINTS": "true"}},
         {"env": {"DYN_SYSTEM_PORT": "9000"}},
     ],
 )
@@ -185,4 +185,20 @@ def test_conflicting_sidecar_configuration(options):
     data["sidecar"] = options
     config = DynamoConfig.model_validate(data)
     with pytest.raises(ValueError):
+        sidecar_launch(config, binding=config.engines[0], inherited_env={})
+
+
+@pytest.mark.parametrize("scope", ["shared", "sidecar"])
+@pytest.mark.parametrize(
+    "key",
+    ["DYN_SGLANG_CONTROLLER_MANAGED", "DYN_SGLANG_UNREGISTER_ON_PAUSE", "DYN_SGLANG_POLICY_VERSION_TAINTS"],
+)
+def test_explicit_fork_environment_is_rejected(scope, key):
+    data = config_dict()
+    if scope == "shared":
+        data["env"] = {key: "true"}
+    else:
+        data["sidecar"] = {"env": {key: "true"}}
+    config = DynamoConfig.model_validate(data)
+    with pytest.raises(ValueError, match=key):
         sidecar_launch(config, binding=config.engines[0], inherited_env={})

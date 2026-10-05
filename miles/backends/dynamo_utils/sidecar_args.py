@@ -29,8 +29,6 @@ def sidecar_launch(
         "--component": "backend",
         "--endpoint": "generate",
         "--grpc-endpoint": binding.grpc.url,
-        "--controller-managed": None,
-        "--unregister-on-pause": "true",
     }
     managed_env = dict(
         # Dynamo's system listener constructs host:port without adding IPv6 brackets.
@@ -39,8 +37,10 @@ def sidecar_launch(
         DYN_COMPONENT="backend",
         DYN_ENDPOINT="generate",
         DYN_SIDECAR_GRPC_ENDPOINT=binding.grpc.url,
-        DYN_SGLANG_CONTROLLER_MANAGED="true",
-        DYN_SGLANG_UNREGISTER_ON_PAUSE="true",
+        # Fork-only admission settings must not leak into the upstream launch.
+        DYN_SGLANG_CONTROLLER_MANAGED=None,
+        DYN_SGLANG_UNREGISTER_ON_PAUSE=None,
+        DYN_SGLANG_POLICY_VERSION_TAINTS=None,
     )
     for field in (
         "grpc_connections",
@@ -52,6 +52,13 @@ def sidecar_launch(
         if value is not None:
             managed[f"--{field.replace('_', '-')}"] = str(value)
             managed_env[f"DYN_SIDECAR_{field.upper()}"] = str(value)
-    argv = [executable, *launch_args(config.sidecar, managed=managed)]
+    reserved = (
+        "--controller-managed",
+        "--unregister-on-pause",
+        "--policy-version-taints",
+        "--defer-serving",
+        "--require-weight-version-fence",
+    )
+    argv = [executable, *launch_args(config.sidecar, managed=managed, reserved=reserved)]
     env = runtime_env(config, inherited_env=inherited_env, options=config.sidecar, managed_env=managed_env)
     return argv, env
