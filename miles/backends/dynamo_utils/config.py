@@ -111,6 +111,8 @@ class SidecarConfig(LaunchOptions):
 
 
 class DynamoConfig(FrozenStrictBaseModel):
+    request_timeout_seconds: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 600.0
+    control_timeout_seconds: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 120.0
     namespace: Name
     model_path: Annotated[str, Field(min_length=1)]
     discovery: Annotated[EtcdDiscovery | FileDiscovery, Field(discriminator="backend")]
