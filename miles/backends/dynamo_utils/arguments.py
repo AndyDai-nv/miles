@@ -9,7 +9,6 @@ PROVIDER_PATH = "miles.backends.dynamo_utils.launch.external_engine_provider"
 
 
 def configure_dynamo(args) -> None:
-    """Resolve the opt-in synchronous text backend; refuse unsupported control paths."""
     value = args.dynamo_config
     config = value if isinstance(value, DynamoConfig) else load_dynamo_config(Path(value))
     if not config.exclusive_run:
@@ -18,7 +17,6 @@ def configure_dynamo(args) -> None:
         )
     if use_legacy_rollout_v1():
         raise ValueError("Dynamo requires the class-based rollout API")
-    # These modes bypass this synchronous gate or require data the stream mapper does not carry.
     for name in (
         "fully_async",
         "colocate",
