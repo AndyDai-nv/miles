@@ -1,0 +1,6 @@
+{
+  "device": "cuda",
+  "mem_fraction_static": 0.7,
+  "page_size": 16,
+  "kv_events_config": "{\"publisher\":\"zmq\",\"endpoint\":\"tcp://*:5558\",\"topic\":\"\"}"
+}

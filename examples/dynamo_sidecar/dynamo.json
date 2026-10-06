@@ -1,0 +1,26 @@
+{
+  "exclusive_run": true,
+  "namespace": "miles-grpo-example",
+  "model_path": "/root/models/Qwen3-4B",
+  "discovery": {"backend": "etcd", "endpoints": [{"host": "127.0.0.1", "port": 2379}]},
+  "pins": {
+    "dynamo": "269939c6cc6eab0de90c35361ffa1e8bab73968c",
+    "sglang": "14a1fa7d93e87355375b2c3b6fa17255a4b8aa07",
+    "sglang_branch": "sglang-miles"
+  },
+  "frontend": {"router_mode": "kv", "address": {"host": "0.0.0.0", "port": 8000}},
+  "engines": [
+    {
+      "name": "engine-0", "tensor_parallel_size": 2,
+      "http": {"host": "127.0.0.1", "port": 30000},
+      "grpc": {"host": "127.0.0.1", "port": 30001},
+      "sidecar": {"host": "127.0.0.1", "port": 8081}
+    },
+    {
+      "name": "engine-1", "tensor_parallel_size": 2,
+      "http": {"host": "127.0.0.1", "port": 31000},
+      "grpc": {"host": "127.0.0.1", "port": 31001},
+      "sidecar": {"host": "127.0.0.1", "port": 8082}
+    }
+  ]
+}
