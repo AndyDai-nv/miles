@@ -1017,6 +1017,12 @@ def get_miles_extra_args_provider(add_custom_arguments=None):
                 ),
             )
             parser.add_argument(
+                "--dynamo-config",
+                type=str,
+                default=None,
+                help="JSON config for the opt-in synchronous Dynamo sidecar rollout backend.",
+            )
+            parser.add_argument(
                 "--rollout-external-router-pd",
                 action="store_true",
                 default=False,
@@ -3216,6 +3222,12 @@ def miles_validate_args(args):
             if hasattr(args, k):
                 logger.info(f"Warning: Argument {k} is already set to {getattr(args, k)}, will override with {v}.")
             setattr(args, k, v)
+
+    if getattr(args, "dynamo_config", None) is not None:
+        # Optional backend: leave ordinary SGLang parsing and imports unchanged.
+        from miles.backends.dynamo_utils.arguments import configure_dynamo
+
+        configure_dynamo(args)
 
     mode = args.update_weight_transfer_mode
     if mode not in ("broadcast", "broadcast_packed", "p2p", "disk-delta"):

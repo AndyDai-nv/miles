@@ -146,6 +146,11 @@ def inference_controller_worker_name() -> str:
 
 
 def specs_router(args) -> list[CommandWorkerSpec]:
+    if (dynamo_config := getattr(args, "dynamo_config", None)) is not None:
+        # Import the optional backend only after explicit selection.
+        from miles.backends.dynamo_utils.launch import frontend_spec
+
+        return [frontend_spec(args, config=dynamo_config, pool_name=compute_router_pool_id(0))]
     config = resolve_sglang_config(args)  # TODO avoid resolve repeatedly
     return [
         _compute_spec_router(args, model_idx=model_idx, model_cfg=model_cfg)

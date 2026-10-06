@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 # The framework supports other asynchronous approaches such as fully async (see miles/rollout/fully_async_rollout.py).
 async def train(args, *, disposer: Disposer):
+    if getattr(args, "dynamo_config", None) is not None:
+        raise ValueError("Dynamo sidecar rollout currently requires train.py, not the asynchronous driver")
     assert not args.colocate, "Colocation is not supported for async training."
     validate_async_off_policy_correction(args)
     _worker_manager = init_orchestration_script(args, disposer=disposer)

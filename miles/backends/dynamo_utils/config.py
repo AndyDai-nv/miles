@@ -111,6 +111,7 @@ class SidecarConfig(LaunchOptions):
 
 
 class DynamoConfig(FrozenStrictBaseModel):
+    exclusive_run: bool = False
     request_timeout_seconds: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 600.0
     control_timeout_seconds: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 120.0
     namespace: Name
