@@ -14,8 +14,6 @@ from miles.utils.types import Sample
 
 
 class DynamoRolloutFn(BaseRolloutFn):
-    """Synchronous, single-policy GRPO batches using the existing tokenization/reward path."""
-
     def __init__(self, input: RolloutFnConstructorInput):
         super().__init__(input)
         self._controller = input.inference_controller
