@@ -3,7 +3,7 @@ import shlex
 
 from miles.backends.dynamo_utils.config import Address, DynamoConfig
 from miles.backends.dynamo_utils.external_provider import DynamoExternalEngineProvider
-from miles.backends.dynamo_utils.frontend_args import frontend_launch
+from miles.backends.dynamo_utils.frontend_args import frontend_env, frontend_launch
 from miles.utils.workers.argv_utils import python_argv_prefix
 from miles.utils.workers.worker_spec import CommandWorkerSpec, PortInfo, SchedulingSpec
 
@@ -35,7 +35,7 @@ def frontend_spec(args, *, config: DynamoConfig, pool_name: str) -> CommandWorke
                 name="primary", static_port=configured.port if configured else 8000, allow_dynamic=configured is None
             )
         ],
-        env_var=lambda ctx: launch(ctx)[1],
+        env_var=lambda _ctx: frontend_env(config, inherited_env=os.environ),
         scheduling=SchedulingSpec.single(num_gpus_per_worker=0, pin_to_head=args.pin_rollout_manager_to_head),
         launch_command=lambda ctx: shlex.join(launch(ctx)[0]),
     )
