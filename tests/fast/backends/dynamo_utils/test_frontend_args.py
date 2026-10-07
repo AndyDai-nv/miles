@@ -6,7 +6,7 @@ import pytest
 from tests.fast.backends.dynamo_utils.test_config import config_dict
 
 from miles.backends.dynamo_utils.config import Address, DynamoConfig
-from miles.backends.dynamo_utils.frontend_args import frontend_launch
+from miles.backends.dynamo_utils.frontend_args import frontend_env, frontend_launch
 
 
 def _launch(*, host="0.0.0.0", discovery=None, frontend=None):
@@ -62,6 +62,34 @@ def test_frontend_command_and_environment():
     assert env["DYN_SYSTEM_PORT"] == "8081"
     assert env["DYN_HTTP_SVC_SGLANG_GENERATE_PATH"] == "/generate"
     assert env["DYN_ROUTER_MIN_INITIAL_WORKERS"] == "0"
+
+
+def test_environment_before_listener_allocation():
+    data = config_dict()
+    data["frontend"] = {"router_mode": "kv", "env": {"DYN_LOG": "debug"}}
+    inherited = {"PATH": "/bin", "DYN_HTTP_HOST": "stale-host", "DYN_HTTP_PORT": "9999"}
+    before = inherited.copy()
+    env = frontend_env(DynamoConfig.model_validate(data), inherited_env=inherited)
+    assert inherited == before
+    assert "DYN_HTTP_HOST" not in env and "DYN_HTTP_PORT" not in env
+    assert env["DYN_SGLANG_ENABLE_GENERATE"] == "1"
+    assert env["DYN_ROUTER_MODE"] == "kv"
+    assert env["DYN_LOG"] == "debug"
+    assert env["PATH"] == "/bin"
+
+
+@pytest.mark.parametrize("port", [8000, 9000])
+def test_explicit_listener_environment_is_validated_after_allocation(port):
+    options = {"env": {"DYN_HTTP_PORT": str(port)}}
+    data = {**config_dict(), "frontend": options}
+    env = frontend_env(DynamoConfig.model_validate(data), inherited_env={})
+    assert "DYN_HTTP_PORT" not in env
+    if port == 8000:
+        _, env = _launch(frontend=options)
+        assert env["DYN_HTTP_PORT"] == "8000"
+    else:
+        with pytest.raises(ValueError, match="DYN_HTTP_PORT conflicts"):
+            _launch(frontend=options)
 
 
 def test_ipv6_and_file_discovery(tmp_path):
