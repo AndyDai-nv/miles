@@ -1,0 +1,21 @@
+syntax = "proto3";
+package miles.dynamo;
+
+// Wire-compatible projection of sglang/runtime/v1/sglang.proto at
+// sglang-miles 14a1fa7d93: WatchEngineState returns an initial full snapshot.
+// Only these fields are consumed; unknown upstream fields remain compatible.
+message ModelInfo {
+  string model_path = 1;
+  string json_info = 2;
+}
+message ServerInfo {
+  string json_info = 1;
+}
+message EngineState {
+  uint64 instance_id = 1;
+  uint64 revision = 2;
+  bool healthy = 3;
+  bool is_pause = 4;
+  ModelInfo model_info = 5;
+  ServerInfo server_info = 6;
+}

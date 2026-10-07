@@ -46,6 +46,7 @@ setup(
     package_data={"miles.dashboard": ["static/*"]},
     install_requires=_fetch_requirements("requirements.txt"),
     extras_require={
+        "dynamo": ["grpcio>=1.60", "protobuf>=4.21"],
         "fsdp": [
             "torch>=2.0",
         ],
