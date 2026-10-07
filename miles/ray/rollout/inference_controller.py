@@ -44,6 +44,8 @@ CELLS_READY_TIMEOUT_SECONDS = 3600.0
 
 @enforce_lock_discipline
 class InferenceController:
+    _dynamo_runtime = None
+
     @lock_exempt
     def __init__(
         self,
@@ -61,6 +63,12 @@ class InferenceController:
         self._eval_fleet: InferenceControllerEvalFleet | None = None
         self._watcher_disposers: list[StopWatchFn] = []
         self._ticker: SimpleTicker | None = None
+        self._dynamo_runtime = None
+        if (config := getattr(args, "dynamo_config", None)) is not None:
+            # grpc/protobuf are optional backend dependencies.
+            from miles.backends.dynamo_utils.runtime import DynamoRuntime
+
+            self._dynamo_runtime = DynamoRuntime(config)
 
     @lock_exempt
     @init_once
@@ -78,6 +86,9 @@ class InferenceController:
             engine_provider=self._engine_provider,
             router_addrs=router_addrs,
         )
+        if self._dynamo_runtime is not None:
+            for server in self.servers.values():
+                server.serving_registry = self._dynamo_runtime.registry
         if self.args.eval_num_gpus > 0:
             self._eval_fleet = InferenceControllerEvalFleet(self.args, srv=self.servers["eval"])
 
@@ -157,6 +168,8 @@ class InferenceController:
 
     @with_lock
     async def dispose(self) -> None:
+        if self._dynamo_runtime is not None:
+            self._dynamo_runtime.gate.fail()
         if (ticker := self._ticker) is not None:
             self._ticker = None
             await ticker.dispose()
@@ -221,6 +234,9 @@ class InferenceController:
         await self._health_monitoring_pause(model_id)
         await self._ensure_cells_ready(model_id=model_id)
 
+        if self._dynamo_runtime is not None:
+            await self._dynamo_runtime.gate.begin_update()
+
         srv = self._get_updatable_server(model_id=model_id)
         if not srv:
             return UpdatableEngines(
@@ -239,10 +255,32 @@ class InferenceController:
 
     @releases_lock
     async def abort_update_weights(self) -> None:
-        pass
+        if self._dynamo_runtime is not None:
+            self._dynamo_runtime.gate.fail()
 
     @releases_lock
-    async def end_update_weights(self, snapshot_cell_id_to_hashes: dict[str, str]) -> None:
+    async def end_update_weights(
+        self, snapshot_cell_id_to_hashes: dict[str, str], weight_version: str | None = None
+    ) -> None:
+        try:
+            await self._end_update_weights(snapshot_cell_id_to_hashes, weight_version=weight_version)
+        except BaseException:
+            if self._dynamo_runtime is not None:
+                self._dynamo_runtime.gate.fail()
+            raise
+
+    @requires_lock
+    async def _end_update_weights(
+        self, snapshot_cell_id_to_hashes: dict[str, str], *, weight_version: str | None
+    ) -> None:
+        if self._dynamo_runtime is not None:
+            current = {
+                cell_id: cell.meta.workers_hash
+                for srv in self.servers.values()
+                for cell_id, cell in srv.server_cells.items()
+            }
+            if current != snapshot_cell_id_to_hashes:
+                raise RuntimeError("Dynamo engine membership changed during the weight update")
         await asyncio.gather(
             *[
                 cell.mark_weights_ready()
@@ -253,6 +291,20 @@ class InferenceController:
                 and cell.is_pending_weights
             ]
         )
+        if self._dynamo_runtime is not None:
+            await self._dynamo_runtime.gate.finish_update(version=weight_version)
+
+    @lock_exempt
+    async def dynamo_acquire_rollout(self, *, version: str) -> str:
+        if self._dynamo_runtime is None:
+            raise RuntimeError("Dynamo backend is not enabled")
+        return await self._dynamo_runtime.gate.acquire(version=version)
+
+    @lock_exempt
+    async def dynamo_release_rollout(self, *, ticket: str, success: bool) -> None:
+        if self._dynamo_runtime is None:
+            raise RuntimeError("Dynamo backend is not enabled")
+        await self._dynamo_runtime.gate.release(ticket=ticket, success=success)
 
     @requires_lock
     async def _ensure_cells_ready(self, model_id: str | None = None) -> None:

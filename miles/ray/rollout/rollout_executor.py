@@ -16,6 +16,7 @@ from miles.ray.rollout.train_data_conversion import (
     convert_samples_to_train_data,
     split_train_data_by_dp,
 )
+from miles.ray.specs.inference import inference_controller_worker_name
 from miles.rollout.base_types import (
     RolloutFnConstructorInput,
     RolloutFnEvalInput,
@@ -97,6 +98,14 @@ class RolloutExecutor:
                 self.eval_generate_rollout = None
             else:
                 input = RolloutFnConstructorInput(args=args, data_source=self.data_source)
+                if getattr(args, "dynamo_config", None) is not None:
+                    input = RolloutFnConstructorInput(
+                        args=args,
+                        data_source=self.data_source,
+                        inference_controller=self._inference_controller_provider.get_handle(
+                            inference_controller_worker_name()
+                        ),
+                    )
                 self.generate_rollout = load_rollout_function(input, self.args.rollout_function_path)
                 if self.args.eval_function_path == self.args.rollout_function_path:
                     # Reuse the instance so train and eval share one state (and stateful
