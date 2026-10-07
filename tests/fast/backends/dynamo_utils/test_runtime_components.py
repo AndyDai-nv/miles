@@ -82,11 +82,14 @@ def test_listener_env_is_validated_after_port_allocation(port):
 
 
 @pytest.mark.asyncio
-async def test_sidecar_owns_discovery_but_dispose_closes_dispatch():
+@pytest.mark.parametrize("bootstrap_port", [None, 8998])
+async def test_sidecar_owns_discovery_but_dispose_closes_dispatch(bootstrap_port):
     config = DynamoConfig.model_validate(config_dict())
     close = Mock()
     registry = SidecarDiscoveryRegistry(config=config, on_remove=close)
-    await registry.register(worker_url=config.engines[0].http.url, worker_type="regular", bootstrap_port=None)
+    await registry.register(
+        worker_url=config.engines[0].http.url, worker_type="regular", bootstrap_port=bootstrap_port
+    )
     close.assert_not_called()
     await registry.unregister(worker_url=config.engines[0].http.url)
     close.assert_called_once_with()
@@ -95,7 +98,11 @@ async def test_sidecar_owns_discovery_but_dispose_closes_dispatch():
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "worker_url,worker_type,bootstrap",
-    [("http://unknown:30000", "regular", None), ("http://engine-0:30000", "prefill", 9999)],
+    [
+        ("http://unknown:30000", "regular", None),
+        ("http://engine-0:30000", "prefill", 9999),
+        ("http://engine-0:30000", "decode", 8998),
+    ],
 )
 async def test_registry_rejects_unbound_or_pd_workers(worker_url, worker_type, bootstrap):
     registry = SidecarDiscoveryRegistry(config=DynamoConfig.model_validate(config_dict()), on_remove=Mock())
