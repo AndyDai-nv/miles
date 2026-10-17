@@ -4,6 +4,8 @@ Draft: CPU-tested integration, not a measured GPU parity result.
 
 Build SGLang from `sgl-project/sglang` **sglang-miles**, at the revision in
 `dynamo.json`, with its native gRPC extension (`SGLANG_BUILD_RUST_EXTS=grpc`).
+This SGLang revision requires PyTorch 2.14.1; use matching CUDA 13 training
+extensions from Miles' `cu130-torch214-x86_64` wheels release on x86-64.
 Build Dynamo's Python bindings and root package from `AndyDai-nv/dynamo` at
 the manifest revision: this includes the still-unmerged admission PRs and
 authenticated native HTTP forwarding. Do not install Dynamo's `[sglang]`
