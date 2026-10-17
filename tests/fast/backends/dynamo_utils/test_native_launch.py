@@ -2,6 +2,7 @@ import shlex
 from types import SimpleNamespace
 
 import pytest
+from sglang.srt.arg_groups.serving_hook import handle_deprecated_args
 from tests.fast.backends.sglang_utils.conftest import make_engine_args
 from tests.fast.ray.rollout.conftest import make_args
 from tests.fast.ray.specs.test_inference import _make_model_cfg, _make_router_ctx
@@ -92,7 +93,8 @@ def test_sidecar_does_not_accept_conflicting_admission_env(config):
         sidecar_env(config, api_key=None)
 
 
-def test_native_sglang_parser_accepts_embedded_sidecar(config):
+@pytest.mark.parametrize("api_key", [None, "test-key"])
+def test_native_sidecar_arguments_and_upstream_auth_validation(config, api_key):
     ctx = SimpleNamespace(
         self_addrs={
             "primary": HostAndPort(host="127.0.0.1", port=18000),
@@ -102,7 +104,7 @@ def test_native_sglang_parser_accepts_embedded_sidecar(config):
     )
     overrides = sidecar_overrides(config, overrides={}, ctx=ctx)
     command = compute_engine_launch_cmd(
-        make_engine_args(sglang_api_key="test-key"),
+        make_engine_args(sglang_api_key=api_key),
         interpreter_prefix=["python"],
         node_rank=0,
         worker_type=WorkerType.REGULAR,
@@ -122,5 +124,10 @@ def test_native_sglang_parser_accepts_embedded_sidecar(config):
     assert parsed.sidecar == "dynamo.sglang.sidecar"
     assert parsed.sidecar_args == overrides["sidecar_args"]
     assert parsed.grpc_port == 18001
-    assert parsed.api_key == "test-key"
+    assert parsed.api_key == api_key
     assert parsed.tp_size == 2
+    if api_key:
+        with pytest.raises(ValueError, match="native gRPC listener bypasses HTTP auth"):
+            handle_deprecated_args(parsed)
+    else:
+        handle_deprecated_args(parsed)
