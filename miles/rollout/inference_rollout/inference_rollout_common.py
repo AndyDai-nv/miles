@@ -215,6 +215,7 @@ class InferenceRolloutFn(BaseRolloutFn):
         super().__init__(input)
         self.data_source = input.data_source
         self.state = GenerateState(input.args)
+        self.state.inference_controller_provider = input.inference_controller_provider
         self.eval_prompt_dataset_cache = {}
 
     async def __call__(self, input: RolloutFnInput) -> RolloutFnOutput:
