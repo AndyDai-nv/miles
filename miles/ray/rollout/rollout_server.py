@@ -3,6 +3,8 @@ import dataclasses
 import logging
 from typing import Any
 
+from miles.backends.dynamo_utils.serving_registry import DynamoServingRegistry
+
 from miles.backends.sglang_utils.sglang_api_client import SGLangApiClient
 from miles.backends.sglang_utils.sglang_config import resolve_sglang_config
 from miles.backends.sglang_utils.sglang_router_api_client import SGLangRouterApiClient
@@ -113,13 +115,21 @@ class RolloutServer:
     async def add_cell(self, cell_meta: ServerCellMetadata):
         cell_id = cell_meta.cell_id
         assert cell_id not in self.server_cells
+        registry = self.serving_registry
+        if (config := getattr(self.args, "dynamo_config", None)) is not None:
+            registry = DynamoServingRegistry(
+                provider=self.engine_provider,
+                worker_name=cell_meta.worker_name,
+                api_key=cell_meta.sglang_api_key,
+                timeout_seconds=config.control_timeout_seconds,
+            )
         cell = ServerCell(
             args=self.args,
             router_api_client=self._router_api_client,
             meta=cell_meta,
             provider=self.engine_provider,
             health_checker_activeness=self.health_checker_activeness.get,
-            serving_registry=self.serving_registry,
+            serving_registry=registry,
         )
         self.server_cells[cell_id] = cell
         if not (self.args.colocate and cell_meta.needs_offload):
@@ -164,6 +174,10 @@ class RolloutServer:
     @requires_lock
     async def flush_cache(self):
         return await asyncio.gather(*[cell.flush_cache() for cell in self._addressable_cells()])
+
+    @requires_lock
+    async def prepare_weight_update(self):
+        await asyncio.gather(*[cell.prepare_weight_update() for cell in self._addressable_cells()])
 
     @requires_lock
     async def abort_all(self) -> None:

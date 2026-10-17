@@ -108,6 +108,9 @@ class _RecordingServer:
     async def onload(self, tags=None):
         self.onload_tags.append(tags)
 
+    async def prepare_weight_update(self):
+        pass
+
     async def dispose(self):
         self.dispose_count += 1
 
@@ -175,6 +178,9 @@ class _FakeUpdatableCell:
 
     async def mark_weights_ready(self) -> None:
         self.marked_ready += 1
+
+    async def finish_weight_update(self, weight_version):
+        self.finished_version = weight_version
 
 
 class _TickingCell:

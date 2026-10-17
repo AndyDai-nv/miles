@@ -244,6 +244,7 @@ class InferenceController:
                 snapshot_cell_id_to_hashes={},
             )
 
+        await srv.prepare_weight_update()
         return UpdatableEngines(
             rollout_engines=srv.api_clients,
             engine_gpu_counts=srv.engine_gpu_counts,
@@ -256,7 +257,19 @@ class InferenceController:
         pass
 
     @releases_lock
-    async def end_update_weights(self, snapshot_cell_id_to_hashes: dict[str, str]) -> None:
+    async def end_update_weights(
+        self, snapshot_cell_id_to_hashes: dict[str, str], weight_version: str | None = None
+    ) -> None:
+        await asyncio.gather(
+            *[
+                cell.finish_weight_update(weight_version)
+                for srv in self.servers.values()
+                for cell_id, cell in srv.server_cells.items()
+                if cell_id in snapshot_cell_id_to_hashes
+                and snapshot_cell_id_to_hashes[cell_id] == cell.meta.workers_hash
+                and cell.is_pending_weights_or_serving
+            ]
+        )
         await asyncio.gather(
             *[
                 cell.mark_weights_ready()
