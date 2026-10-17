@@ -44,11 +44,12 @@ export no_proxy=127.0.0.1 && export PYTHONUNBUFFERED=1 && ray job submit
   --label-key label
   --apply-chat-template
   --rollout-shuffle
-  --rm-type deepscaler
+  --apply-chat-template-kwargs '{"enable_thinking": false}'
+  --rm-type math
   --rollout-batch-size 4
   --n-samples-per-prompt 4
   --global-batch-size 16
-  --rollout-max-response-len 1024
+  --rollout-max-response-len 4096
   --rollout-temperature 1
   --num-rollout 20
   --rollout-num-gpus 4
@@ -60,7 +61,7 @@ export no_proxy=127.0.0.1 && export PYTHONUNBUFFERED=1 && ray job submit
   --expert-model-parallel-size 1
   --expert-tensor-parallel-size 1
   --use-dynamic-batch-size
-  --max-tokens-per-gpu 2048
+  --max-tokens-per-gpu 8192
   --advantage-estimator grpo
   --entropy-coef 0
   --eps-clip 0.2

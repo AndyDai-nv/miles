@@ -54,14 +54,15 @@ def execute(args: ScriptArgs):
         )
         + f"--prompt-data {shlex.quote(args.data_dir + '/dapo-math-17k/dapo-math-17k.jsonl')} "
         "--input-key prompt --label-key label --apply-chat-template --rollout-shuffle "
-        "--rm-type deepscaler --rollout-batch-size 4 --n-samples-per-prompt 4 "
-        "--global-batch-size 16 --rollout-max-response-len 1024 --rollout-temperature 1 "
+        "--apply-chat-template-kwargs '{\"enable_thinking\": false}' "
+        "--rm-type math --rollout-batch-size 4 --n-samples-per-prompt 4 "
+        "--global-batch-size 16 --rollout-max-response-len 4096 --rollout-temperature 1 "
         f"--num-rollout {args.num_rollout} --rollout-num-gpus 4 --rollout-num-gpus-per-engine 2 "
     )
     performance = (
         "--tensor-model-parallel-size 2 --sequence-parallel --pipeline-model-parallel-size 1 "
         "--context-parallel-size 1 --expert-model-parallel-size 1 --expert-tensor-parallel-size 1 "
-        "--use-dynamic-batch-size --max-tokens-per-gpu 2048 "
+        "--use-dynamic-batch-size --max-tokens-per-gpu 8192 "
     )
     algorithm = "--advantage-estimator grpo --entropy-coef 0 --eps-clip 0.2 --eps-clip-high 0.28 "
     optimizer = (
