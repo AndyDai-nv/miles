@@ -6,6 +6,10 @@ Build SGLang from `sgl-project/sglang` **sglang-miles**, at the revision in
 `dynamo.json`, with its native gRPC extension (`SGLANG_BUILD_RUST_EXTS=grpc`).
 This SGLang revision requires PyTorch 2.14.1; use matching CUDA 13 training
 extensions from Miles' `cu130-torch214-x86_64` wheels release on x86-64.
+Match FlashInfer's Python, cubin and JIT-cache versions (0.7.1). For this
+Qwen3 recipe, retain Miles' Transformers 5.12.1 and tokenizers 0.22.2:
+Transformers 5.19 conflicts with Miles' HF aliases. This overrides SGLang's
+declared package pins and is not validation for other model families.
 Build Dynamo's Python bindings and root package from `AndyDai-nv/dynamo` at
 the manifest revision: this includes the still-unmerged admission PRs and
 authenticated native HTTP forwarding. Do not install Dynamo's `[sglang]`
