@@ -1,6 +1,6 @@
 # Miles-managed Dynamo sidecar
 
-Draft: CPU-tested integration, not a measured GPU parity result.
+Draft: single-node GRPO and recovery tested; authenticated launch remains blocked.
 
 Build SGLang from `sgl-project/sglang` **sglang-miles**, at the revision in
 `dynamo.json`, with its native gRPC extension (`SGLANG_BUILD_RUST_EXTS=grpc`).
@@ -34,9 +34,9 @@ seed. Miles allocates four training GPUs and two TP2 engines, starts the fronten
 and launches each sidecar via SGLang `--sidecar dynamo.sglang.sidecar`.
 No external engine list, standalone sidecar process or special rollout function
 is needed. Add `--extra-args '--use-fault-tolerance'` for a separate recovery run.
-Compare end-to-end training wall-clock and per-rollout rewards from both runs;
-report startup separately and record the exact image/commit/settings. No parity
-numbers are available for this revision yet.
+The [GPU validation](https://github.com/radixark/miles/pull/3890#issuecomment-6228599619)
+records tested revisions, wall-clock timing, per-rollout rewards and in-flight
+failure recovery. Record startup separately when comparing other configurations.
 
 Frontend/sidecar native options go in their `extra_args` or `env`; namespace,
 transport, authentication and allocated listeners remain Miles-owned. The first
