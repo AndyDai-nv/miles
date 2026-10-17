@@ -44,7 +44,7 @@ def execute(args: ScriptArgs):
         f"--hf-checkpoint {shlex.quote(args.model_dir + '/Qwen3-4B')} "
         f"--ref-load {shlex.quote(args.model_dir + '/Qwen3-4B_torch_dist')} "
         f"--load {shlex.quote(args.model_dir + '/Qwen3-4B_torch_dist')} "
-        "--no-load-optim --no-load-rng "
+        "--finetune --no-load-optim --no-load-rng "
     )
     rollout = (
         (

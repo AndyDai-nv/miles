@@ -35,6 +35,7 @@ export no_proxy=127.0.0.1 && export PYTHONUNBUFFERED=1 && ray job submit
   --hf-checkpoint /root/models/Qwen3-4B
   --ref-load /root/models/Qwen3-4B_torch_dist
   --load /root/models/Qwen3-4B_torch_dist
+  --finetune
   --no-load-optim
   --no-load-rng
   --dynamo-config examples/dynamo_sidecar/dynamo.json
