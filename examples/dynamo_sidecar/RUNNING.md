@@ -18,8 +18,11 @@ not verify the installed binaries' Git revisions.
 
 Provide converted Qwen3-4B weights, DAPO data, etcd and NATS. Set a unique
 namespace and reachable service addresses in `dynamo.json`. Use a trusted
-private network: the sidecar's admission listener is not authenticated by
-`--sglang-api-key` (that key protects engine HTTP).
+private network: the sidecar's admission listener is unauthenticated. Miles
+and the sidecar forward `--sglang-api-key` to engine HTTP, but the pinned
+SGLang rejects API keys with native gRPC because that listener has no auth.
+Authenticated sidecar launch therefore remains blocked on SGLang gRPC auth;
+do not bypass its validation or expose these listeners to untrusted clients.
 
 ```bash
 python scripts/run_qwen3_4b_dynamo.py --router dynamo --output-dir /data/parity/dynamo
