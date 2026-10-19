@@ -115,7 +115,11 @@ class RolloutExecutor(DedicatedRpcLoopWorker):
                 self.generate_rollout = None
                 self.eval_generate_rollout = None
             else:
-                input = RolloutFnConstructorInput(args=args, data_source=self.data_source)
+                input = RolloutFnConstructorInput(
+                    args=args,
+                    data_source=self.data_source,
+                    inference_controller_provider=self._inference_controller_provider,
+                )
                 self.generate_rollout = load_rollout_function(input, self.args.rollout_function_path)
                 if self.args.eval_function_path == self.args.rollout_function_path:
                     # Reuse the instance so train and eval share one state (and stateful
