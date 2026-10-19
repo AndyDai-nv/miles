@@ -312,7 +312,10 @@ async def update_weights(
     except BaseException:
         await inference_controller.abort_update_weights()
         raise
-    await inference_controller.end_update_weights(snapshot_cell_id_to_hashes=info.snapshot_cell_id_to_hashes)
+    await inference_controller.end_update_weights(
+        snapshot_cell_id_to_hashes=info.snapshot_cell_id_to_hashes,
+        weight_version=str(weight_version) if weight_version is not None else None,
+    )
 
     await _maybe_log_inference_engine_weight_checksums(
         args, inference_controller=inference_controller, rollout_id=rollout_id, trainer_model_id=trainer_model_id
