@@ -1,9 +1,10 @@
 # Miles-managed Dynamo sidecar
 
-Draft integration; authenticated launch remains blocked.
+Draft integration with unmerged SGLang and Dynamo dependencies.
 
-Build SGLang from `sgl-project/sglang` **sglang-miles**, at the revision in
-`dynamo.json`, with its native gRPC extension (`SGLANG_BUILD_RUST_EXTS=grpc`).
+Build SGLang from `AndyDai-nv/sglang` at the revision in `dynamo.json`:
+**sglang-miles** plus [native gRPC authentication](https://github.com/sgl-project/sglang/pull/45208).
+Include its native gRPC extension (`SGLANG_BUILD_RUST_EXTS=grpc`).
 This SGLang revision requires PyTorch 2.14.1; use matching CUDA 13 training
 extensions from Miles' `cu130-torch214-x86_64` wheels release on x86-64.
 Match FlashInfer's Python, cubin and JIT-cache versions (0.7.1). For this
@@ -12,17 +13,16 @@ Transformers 5.19 conflicts with Miles' HF aliases. This overrides SGLang's
 declared package pins and is not validation for other model families.
 Build Dynamo's Python bindings and root package from `AndyDai-nv/dynamo` at
 the manifest revision: this includes the still-unmerged admission PRs and
-authenticated native HTTP forwarding. Do not install Dynamo's `[sglang]`
+authenticated HTTP and native gRPC forwarding. Do not install Dynamo's `[sglang]`
 extra over the SGLang-miles build. Pins record required builds; Miles does
 not verify the installed binaries' Git revisions.
 
 Provide converted Qwen3-4B weights, DAPO data, etcd and NATS. Set a unique
 namespace and reachable service addresses in `dynamo.json`. Use a trusted
-private network: the sidecar's admission listener is unauthenticated. Miles
-and the sidecar forward `--sglang-api-key` to engine HTTP, but the pinned
-SGLang rejects API keys with native gRPC because that listener has no auth.
-Authenticated sidecar launch therefore remains blocked on SGLang gRPC auth;
-do not bypass its validation or expose these listeners to untrusted clients.
+private network for the frontend and sidecar admission listeners.
+`--sglang-api-key` authenticates engine HTTP and every native gRPC call;
+it does not add authentication to the frontend or admission listeners.
+Pass it through the launcher's `--extra-args` for both comparison runs.
 
 ```bash
 python scripts/run_qwen3_4b_dynamo.py --router dynamo --output-dir /data/parity/dynamo
