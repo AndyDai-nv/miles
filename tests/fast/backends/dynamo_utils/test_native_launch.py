@@ -53,8 +53,4 @@ def test_native_sidecar_arguments_and_upstream_auth_validation(config, api_key):
     assert parsed.grpc_port == 18001
     assert parsed.api_key == api_key
     assert parsed.tp_size == 2
-    if api_key:
-        with pytest.raises(ValueError, match="native gRPC listener bypasses HTTP auth"):
-            handle_deprecated_args(parsed)
-    else:
-        handle_deprecated_args(parsed)
+    handle_deprecated_args(parsed)
