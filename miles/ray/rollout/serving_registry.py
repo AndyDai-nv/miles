@@ -12,6 +12,12 @@ class ServingRegistry(Protocol):
 
     async def unregister(self, *, worker_url: str) -> None: ...
 
+    async def prepare_update(self, *, worker_url: str) -> None: ...
+
+    async def finish_update(self, *, worker_url: str, weight_version: str | None) -> None: ...
+
+    async def check_health(self, *, worker_url: str, serving: bool) -> None: ...
+
 
 @dataclass(frozen=True)
 class SGLangServingRegistry:
@@ -28,3 +34,12 @@ class SGLangServingRegistry:
 
     async def unregister(self, *, worker_url: str) -> None:
         await self.client.remove_worker(worker_url=worker_url, use_legacy_api=self.use_legacy_api)
+
+    async def prepare_update(self, *, worker_url: str) -> None:
+        pass
+
+    async def finish_update(self, *, worker_url: str, weight_version: str | None) -> None:
+        pass
+
+    async def check_health(self, *, worker_url: str, serving: bool) -> None:
+        pass
