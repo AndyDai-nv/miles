@@ -6,6 +6,8 @@ import argparse
 import time
 from copy import deepcopy
 
+from miles.backends.dynamo_utils.generate import post_generate
+
 from miles.rollout.base_types import GenerateFnInput, GenerateFnOutput
 from miles.rollout.generate_utils.generate_endpoint_utils import (
     compute_prompt_ids_from_sample,
@@ -63,7 +65,11 @@ async def generate(input: GenerateFnInput) -> GenerateFnOutput:
             break
 
         gen_t0 = time.time()
-        output = await post(url, payload, headers=compute_routing_headers(args, sample))
+        headers = compute_routing_headers(args, sample)
+        if getattr(args, "dynamo_config", None) is not None:
+            output = await post_generate(args, url, payload, headers=headers)
+        else:
+            output = await post(url, payload, headers=headers)
         sink = None if input.evaluation else TrajectoryLifecycle().sink
         if sink is not None:
             tokens = output.get("meta_info", {}).get("completion_tokens", "")

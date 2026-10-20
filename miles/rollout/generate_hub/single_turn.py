@@ -2,6 +2,7 @@
 Simple single-turn generation.
 """
 
+from miles.backends.dynamo_utils.generate import post_generate
 from miles.rollout.base_types import GenerateFnInput, GenerateFnOutput
 from miles.rollout.generate_utils.generate_endpoint_utils import (
     compute_prompt_ids_from_sample,
@@ -46,7 +47,11 @@ async def generate(input: GenerateFnInput, url: str | None = None) -> GenerateFn
         sample.status = halt_status
         return GenerateFnOutput(samples=sample)
 
-    output = await post(url, payload, headers=compute_routing_headers(args, sample))
+    headers = compute_routing_headers(args, sample)
+    if getattr(args, "dynamo_config", None) is not None:
+        output = await post_generate(args, url, payload, headers=headers)
+    else:
+        output = await post(url, payload, headers=headers)
     await update_sample_from_response(args, sample, payload=payload, output=output)
 
     return GenerateFnOutput(samples=sample)
