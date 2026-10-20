@@ -1,10 +1,35 @@
 import json
 import os
 import shlex
+
 from sglang.srt.server_args import ServerArgs
+
 from miles.backends.dynamo_utils.config import Address, launch_args, runtime_env
-from miles.utils.workers.argv_utils import _record_field_names
-from miles.utils.workers.worker_spec import PortInfo
+from miles.backends.dynamo_utils.frontend_args import frontend_env, frontend_launch
+from miles.utils.workers.argv_utils import _record_field_names, python_argv_prefix
+from miles.utils.workers.worker_spec import CommandWorkerSpec, PortInfo, SchedulingSpec
+
+
+def router_spec(args, *, name: str, primary_port: PortInfo) -> CommandWorkerSpec:
+    config = args.dynamo_config
+
+    def command(ctx):
+        address = ctx.self_addrs["primary"]
+        argv, _ = frontend_launch(
+            config,
+            address=Address(host=address.host.strip("[]"), port=address.port),
+            interpreter_prefix=python_argv_prefix(),
+            inherited_env=os.environ,
+        )
+        return shlex.join(argv)
+
+    return CommandWorkerSpec(
+        name=name,
+        port_infos=[primary_port],
+        env_var=lambda _ctx: frontend_env(config, inherited_env=os.environ),
+        scheduling=SchedulingSpec.single(num_gpus_per_worker=0, pin_to_head=args.pin_rollout_manager_to_head),
+        launch_command=command,
+    )
 
 
 def sidecar_ports() -> list[PortInfo]:

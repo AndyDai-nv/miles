@@ -165,6 +165,12 @@ def compute_router_worker_name(model_idx: int) -> str:
 
 
 def _compute_spec_router(args, model_idx: int, model_cfg: ModelConfig) -> CommandWorkerSpec:
+    if getattr(args, "dynamo_config", None) is not None:
+        return dynamo_launch.router_spec(
+            args,
+            name=compute_router_pool_id(model_idx),
+            primary_port=_compute_router_primary_port_info(args, model_idx=model_idx),
+        )
     interpreter_prefix = python_argv_prefix()
 
     def _compute_launch_command(ctx: LaunchCommandContext) -> str:
