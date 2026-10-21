@@ -2,6 +2,8 @@ import logging
 import os
 import shlex
 
+from miles.backends.dynamo_utils import launch as dynamo_launch
+
 from miles.backends.sglang_utils.router_args_utils import compute_sglang_router_args, router_args_to_argv
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
 from miles.backends.sglang_utils.sglang_config import ModelConfig, ServerGroupConfig, resolve_sglang_config
@@ -299,6 +301,7 @@ def _compute_spec_inference_engine(
 ) -> CommandWorkerSpec:
     num_workers_per_cell = max(1, server_group_config.num_gpus_per_engine // args.num_gpus_per_node)
     interpreter_prefix = python_argv_prefix()
+    dynamo = getattr(args, "dynamo_config", None)
 
     def _compute_launch_command(ctx: LaunchCommandContext) -> str:
         dist_init = ctx.self_addrs["dist_init"]
@@ -309,14 +312,17 @@ def _compute_spec_inference_engine(
             + ctx.cell_index * num_workers_per_cell
             + ctx.worker_in_cell_index
         )
-        return compute_engine_launch_cmd(
+        overrides = server_group_config.overrides
+        if dynamo is not None:
+            overrides = dynamo_launch.sidecar_overrides(dynamo, overrides=overrides, ctx=ctx)
+        command = compute_engine_launch_cmd(
             args=args,
             interpreter_prefix=interpreter_prefix,
             # TODO: make the indexing it k8s native compatible
             node_rank=ctx.worker_in_cell_index,
             worker_type=server_group_config.worker_type,
             base_gpu_id=ctx.local_gpu_ids[0],
-            sglang_overrides=server_group_config.overrides,
+            sglang_overrides=overrides,
             num_gpus_per_engine=server_group_config.num_gpus_per_engine,
             dist_init_addr=f"{dist_init.host}:{dist_init.port}",
             nccl_port=ctx.self_addrs["nccl"].port,
@@ -327,6 +333,7 @@ def _compute_spec_inference_engine(
             gated_launch_port=ctx.self_addrs[GATE_PORT_NAME].port,
             random_seed=random_seed,
         )
+        return dynamo_launch.sidecar_command(command, ctx=ctx) if dynamo is not None else command
 
     num_gpus_per_engine = server_group_config.num_gpus_per_engine
     assert num_gpus_per_engine <= args.num_gpus_per_node or num_gpus_per_engine % args.num_gpus_per_node == 0, (
@@ -335,6 +342,13 @@ def _compute_spec_inference_engine(
     )
 
     envs = compute_inference_engine_env_vars(args)
+    if dynamo is not None:
+        envs = (
+            dynamo_launch.sidecar_env(
+                dynamo, api_key=server_group_config.overrides.get("api_key", args.sglang_api_key)
+            )
+            | envs
+        )
     scheduling = SchedulingSpec(
         num_cells=server_group_config.num_gpus // server_group_config.num_gpus_per_engine,
         num_workers_per_cell=num_workers_per_cell,
@@ -374,6 +388,7 @@ def _compute_spec_inference_engine(
             ),
             PortInfo(name="engine_info_bootstrap", static_port=12000, allow_dynamic=True),
             PortInfo(name=GATE_PORT_NAME, static_port=13000, mode="master", allow_dynamic=True),
+            *(dynamo_launch.sidecar_ports() if dynamo is not None else []),
         ],
         env_var=lambda _ctx: envs,
         scheduling=scheduling,
