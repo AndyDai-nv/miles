@@ -675,9 +675,8 @@ def get_miles_extra_args_provider(add_custom_arguments=None):
                 help=(
                     "The huggingface checkpoint of the trained model. "
                     "This is used to initialize sglang and also provide the tokenizer. "
-                    "Note that, we will always update the parameters in sglang with that of megatron before training, "
-                    "so you only need to provide a huggingface checkpoint that has the same architecture as the model you want to train. "
-                    "It doesn't necessary need to contain the most up-to-date parameters."
+                    "Weight synchronization replaces startup weights with the loaded trainer weights before the first rollout. "
+                    "Disk-delta uses this checkpoint as the common baseline for the initial delta."
                 ),
             )
             parser.add_argument(
@@ -3879,8 +3878,7 @@ def miles_validate_args(args):
         if has_megatron_checkpoint(args.requested_load):
             raise ValueError(
                 "--update-weight-transfer-mode=disk-delta cannot resume from a training checkpoint: "
-                "the first sync only captures a baseline from --hf-checkpoint and never transfers the "
-                f"weights restored from --load={args.requested_load}."
+                f"Requested --load={args.requested_load}."
             )
 
     if args.colocate:

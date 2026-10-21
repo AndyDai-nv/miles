@@ -3572,7 +3572,7 @@ class TestMilesValidateArgsDiskDeltaResume:
         )
 
     def test_resuming_from_a_training_checkpoint_is_rejected(self, tmp_path):
-        """The first sync only snapshots --hf-checkpoint, so the restored weights would never reach the engines."""
+        """Initial synchronization does not enable checkpoint recovery."""
         load_dir = tmp_path / "ckpt"
         load_dir.mkdir()
         (load_dir / "latest_checkpointed_iteration.txt").write_text("10")
