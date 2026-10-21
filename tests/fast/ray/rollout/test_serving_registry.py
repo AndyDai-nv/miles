@@ -5,7 +5,8 @@ from tests.fast.ray.rollout.conftest import make_args, track_server_cell
 from tests.fast.ray.rollout.test_server_cell_state_machine import _make_meta, _StubProvider
 
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
-from miles.ray.rollout.cell_state import CellAddrInfo, StateDisposed, StatePendingWeights, StateServing
+from miles.ray.rollout import server_cell as server_cell_module
+from miles.ray.rollout.cell_state import CellAddrInfo, StateDisposed, StateErrored, StatePendingWeights, StateServing
 from miles.ray.rollout.rollout_server import RolloutServer
 from miles.ray.rollout.server_cell import ServerCell
 from miles.ray.rollout.serving_registry import SGLangServingRegistry
@@ -78,7 +79,8 @@ async def test_failed_registration_keeps_pending_state():
     registry.unregister.assert_not_called()
 
 
-async def test_unregister_failure_preserves_existing_dispose_policy():
+async def test_unregister_failure_preserves_existing_dispose_policy(monkeypatch):
+    monkeypatch.setattr(server_cell_module, "UNREGISTER_FROM_ROUTER_TIMEOUT", 0.1)
     registry = AsyncMock()
     registry.unregister.side_effect = RuntimeError("unreachable")
     cell = _cell(registry)
@@ -87,10 +89,40 @@ async def test_unregister_failure_preserves_existing_dispose_policy():
     assert isinstance(cell._state, StateDisposed)
 
 
+@pytest.mark.parametrize("action,expected_state", [("dispose", StateDisposed), ("mark_errored", StateErrored)])
+async def test_injected_registry_retries_transient_unregister_failure(action, expected_state, monkeypatch):
+    monkeypatch.setattr("miles.utils.retry_utils.asyncio.sleep", AsyncMock())
+    registry = AsyncMock()
+    registry.unregister.side_effect = [RuntimeError("unreachable"), None]
+    cell = _cell(registry)
+    await cell.mark_weights_ready()
+
+    await getattr(cell, action)()
+
+    assert registry.unregister.await_count == 2
+    assert isinstance(cell._state, expected_state)
+    cell.router_api_client.remove_worker.assert_not_called()
+
+
+async def test_failed_unregister_keeps_injected_registry_cell_serving(monkeypatch):
+    monkeypatch.setattr(server_cell_module, "UNREGISTER_FROM_ROUTER_TIMEOUT", 0.1)
+    registry = AsyncMock()
+    registry.unregister.side_effect = RuntimeError("unreachable")
+    cell = _cell(registry)
+    await cell.mark_weights_ready()
+
+    with pytest.raises(RuntimeError, match="unreachable"):
+        await cell.mark_errored()
+
+    assert isinstance(cell._state, StateServing)
+    registry.unregister.assert_awaited_once_with(worker_url="http://engine:30000")
+    cell.router_api_client.remove_worker.assert_not_called()
+
+
 async def test_rollout_server_passes_registry_to_cells():
     registry = AsyncMock()
     server = RolloutServer(
-        server_cells={},
+        all_server_cells={},
         args=make_args(colocate=True),
         context_lock=ContextLock("registry-test"),
         engine_provider=_StubProvider(),
@@ -100,6 +132,6 @@ async def test_rollout_server_passes_registry_to_cells():
         meta = _make_meta(needs_offload=True)
         await server.add_cell(meta)
         try:
-            assert server.server_cells[meta.cell_id].serving_registry is registry
+            assert server.all_server_cells[meta.cell_id].serving_registry is registry
         finally:
             await server.dispose()
