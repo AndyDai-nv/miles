@@ -3675,7 +3675,7 @@ def miles_validate_args(args):
 
     # TODO: refactor
     args.requested_load = args.load
-    if args.megatron_config is None:
+    if args.train_backend == "megatron" and args.megatron_config is None:
         resolve_args_checkpoint_load(args)
 
     if args.eval_interval is not None:
@@ -3875,7 +3875,10 @@ def miles_validate_args(args):
             "--update-weight-transfer-mode=disk-delta requires --hf-checkpoint to be a local directory: "
             "the baseline snapshot is seeded from its safetensors bytes."
         )
-        if has_megatron_checkpoint(args.requested_load):
+        if has_megatron_checkpoint(
+            args.requested_load,
+            ckpt_step=getattr(args, "ckpt_step", None) if args.load == args.requested_load else None,
+        ):
             raise ValueError(
                 "--update-weight-transfer-mode=disk-delta cannot resume from a training checkpoint: "
                 f"Requested --load={args.requested_load}."
