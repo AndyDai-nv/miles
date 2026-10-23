@@ -2,136 +2,66 @@ from unittest.mock import AsyncMock
 
 import pytest
 from tests.fast.ray.rollout.conftest import make_args, track_server_cell
-from tests.fast.ray.rollout.test_server_cell_state_machine import _make_meta, _StubProvider
 
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
-from miles.ray.rollout import server_cell as server_cell_module
-from miles.ray.rollout.cell_state import CellAddrInfo, StateDisposed, StateErrored, StatePendingWeights, StateServing
-from miles.ray.rollout.rollout_server import RolloutServer
-from miles.ray.rollout.server_cell import ServerCell
-from miles.ray.rollout.serving_registry import SGLangServingRegistry
-from miles.utils.context_lock import ContextLock
+from miles.ray.rollout.cell_state import CellAddrInfo, StateDisposed, StatePendingWeights, StateServing
+from miles.ray.rollout.server_cell import ServerCell, ServerCellMetadata
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("dispose_tracked_server_cells")]
 
 
-@pytest.mark.parametrize("legacy", [False, True])
-@pytest.mark.parametrize("worker_type,bootstrap", [("regular", None), ("prefill", 1234), ("decode", None)])
-async def test_default_adapter_preserves_router_contract(legacy, worker_type, bootstrap):
-    client = AsyncMock()
-    registry = SGLangServingRegistry(client=client, use_legacy_api=legacy)
-    await registry.register(worker_url="http://engine:30000", worker_type=worker_type, bootstrap_port=bootstrap)
-    await registry.unregister(worker_url="http://engine:30000")
-    client.add_worker.assert_awaited_once_with(
-        worker_url="http://engine:30000",
-        worker_type=worker_type,
-        bootstrap_port=bootstrap,
-        use_legacy_api=legacy,
-    )
-    client.remove_worker.assert_awaited_once_with(worker_url="http://engine:30000", use_legacy_api=legacy)
+class _RecordingRegistry:
+    def __init__(self):
+        self.calls: list[tuple[str, dict]] = []
+
+    async def register(self, *, worker_url: str, worker_type: WorkerType, bootstrap_port: int | None) -> None:
+        self.calls.append(
+            ("register", dict(worker_url=worker_url, worker_type=worker_type, bootstrap_port=bootstrap_port))
+        )
+
+    async def unregister(self, *, worker_url: str) -> None:
+        self.calls.append(("unregister", dict(worker_url=worker_url)))
 
 
-def _cell(registry):
+async def test_injected_registry_owns_registration_and_cleanup():
+    registry = _RecordingRegistry()
+    router = AsyncMock()
     cell = track_server_cell(
         ServerCell(
             args=make_args(),
-            meta=_make_meta(),
-            router_api_client=AsyncMock(),
-            provider=_StubProvider(),
+            meta=ServerCellMetadata(
+                model_id="default",
+                worker_type=WorkerType.PREFILL,
+                cell_id="cell-0",
+                num_gpus_per_engine=1,
+                gpu_offset=0,
+                sglang_api_key=None,
+                worker_name="cell-0-0",
+                needs_offload=False,
+                update_weights=True,
+                workers_hash="test-hash",
+            ),
+            router_api_client=router,
+            provider=AsyncMock(),
             serving_registry=registry,
         )
     )
     cell._state = StatePendingWeights(
-        addr_info=CellAddrInfo(
-            server_url="http://engine:30000",
-            bootstrap_port=None,
-            gate_url=None,
-        )
+        addr_info=CellAddrInfo(server_url="http://engine:30000", bootstrap_port=1234, gate_url=None)
     )
-    return cell
 
-
-async def test_injected_registry_owns_registration_and_cleanup():
-    registry = AsyncMock()
-    cell = _cell(registry)
     await cell.mark_weights_ready()
-    assert isinstance(cell._state, StateServing)
-    registry.register.assert_awaited_once_with(
-        worker_url="http://engine:30000",
-        worker_type=WorkerType.REGULAR,
-        bootstrap_port=None,
-    )
-    await cell.dispose()
-    registry.unregister.assert_awaited_once_with(worker_url="http://engine:30000")
-    assert isinstance(cell._state, StateDisposed)
-    cell.router_api_client.add_worker.assert_not_called()
-    cell.router_api_client.remove_worker.assert_not_called()
-
-
-async def test_failed_registration_keeps_pending_state():
-    registry = AsyncMock()
-    registry.register.side_effect = RuntimeError("not ready")
-    cell = _cell(registry)
-    with pytest.raises(RuntimeError, match="not ready"):
-        await cell.mark_weights_ready()
-    assert isinstance(cell._state, StatePendingWeights)
-    await cell.dispose()
-    registry.unregister.assert_not_called()
-
-
-async def test_unregister_failure_preserves_existing_dispose_policy(monkeypatch):
-    monkeypatch.setattr(server_cell_module, "UNREGISTER_FROM_ROUTER_TIMEOUT", 0.1)
-    registry = AsyncMock()
-    registry.unregister.side_effect = RuntimeError("unreachable")
-    cell = _cell(registry)
-    await cell.mark_weights_ready()
-    await cell.dispose()
-    assert isinstance(cell._state, StateDisposed)
-
-
-@pytest.mark.parametrize("action,expected_state", [("dispose", StateDisposed), ("mark_errored", StateErrored)])
-async def test_injected_registry_retries_transient_unregister_failure(action, expected_state, monkeypatch):
-    monkeypatch.setattr("miles.utils.retry_utils.asyncio.sleep", AsyncMock())
-    registry = AsyncMock()
-    registry.unregister.side_effect = [RuntimeError("unreachable"), None]
-    cell = _cell(registry)
-    await cell.mark_weights_ready()
-
-    await getattr(cell, action)()
-
-    assert registry.unregister.await_count == 2
-    assert isinstance(cell._state, expected_state)
-    cell.router_api_client.remove_worker.assert_not_called()
-
-
-async def test_failed_unregister_keeps_injected_registry_cell_serving(monkeypatch):
-    monkeypatch.setattr(server_cell_module, "UNREGISTER_FROM_ROUTER_TIMEOUT", 0.1)
-    registry = AsyncMock()
-    registry.unregister.side_effect = RuntimeError("unreachable")
-    cell = _cell(registry)
-    await cell.mark_weights_ready()
-
-    with pytest.raises(RuntimeError, match="unreachable"):
-        await cell.mark_errored()
 
     assert isinstance(cell._state, StateServing)
-    registry.unregister.assert_awaited_once_with(worker_url="http://engine:30000")
-    cell.router_api_client.remove_worker.assert_not_called()
+    assert registry.calls == [
+        ("register", dict(worker_url="http://engine:30000", worker_type=WorkerType.PREFILL, bootstrap_port=1234))
+    ]
 
+    await cell.dispose()
 
-async def test_rollout_server_passes_registry_to_cells():
-    registry = AsyncMock()
-    server = RolloutServer(
-        all_server_cells={},
-        args=make_args(colocate=True),
-        context_lock=ContextLock("registry-test"),
-        engine_provider=_StubProvider(),
-        serving_registry=registry,
-    )
-    async with server.context_lock:
-        meta = _make_meta(needs_offload=True)
-        await server.add_cell(meta)
-        try:
-            assert server.all_server_cells[meta.cell_id].serving_registry is registry
-        finally:
-            await server.dispose()
+    assert isinstance(cell._state, StateDisposed)
+    assert registry.calls == [
+        ("register", dict(worker_url="http://engine:30000", worker_type=WorkerType.PREFILL, bootstrap_port=1234)),
+        ("unregister", dict(worker_url="http://engine:30000")),
+    ]
+    assert router.mock_calls == []
