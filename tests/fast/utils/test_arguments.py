@@ -372,6 +372,24 @@ class TestEventDirectoryDefaults:
 
         assert args.log_inference_engine_weight_checksums is True
 
+    def test_the_save_event_directory_fallback_does_not_ask_for_engine_weight_checksums(self) -> None:
+        """A checkpoint root alone must not make every weight update checksum all engine weights."""
+        args = self._parse(["--save", "/checkpoints/run"])
+
+        miles_validate_args(args)
+
+        assert args.save_debug_event_data == "/checkpoints/run/events"
+        assert args.log_inference_engine_weight_checksums is False
+
+    def test_the_dump_details_event_directory_does_not_ask_for_engine_weight_checksums(self) -> None:
+        """A dump root alone must not make every weight update checksum all engine weights."""
+        args = self._parse(["--dump-details", "/debug/run"])
+
+        miles_validate_args(args)
+
+        assert args.save_debug_event_data == "/debug/run/events"
+        assert args.log_inference_engine_weight_checksums is False
+
     def test_the_ci_event_directory_fallback_does_not_ask_for_engine_weight_checksums(self) -> None:
         """CI gets an event directory for sample ownership without the engine checksum allocation."""
         args = self._parse(["--ci-test", "--run-uuid", "0123456789abcdef"])
