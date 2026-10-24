@@ -371,7 +371,6 @@ class MegatronTrainRayActor(TrainRayActor):
         assert not (
             self.with_ref and self.args.ref_update_interval is not None
         ), "--ref-update-interval keeps the reference in memory only, and no checkpoint holds it"
-        assert (requested_load := self.args.requested_load) is not None, "a hot restart needs --load"
 
         self._finalize_pending_async_save()
 
@@ -393,10 +392,7 @@ class MegatronTrainRayActor(TrainRayActor):
                 load=ckpt_load_config.load, ckpt_step=None, finetune=False, no_load_optim=False, no_load_rng=False
             )
         else:
-            logger.info(
-                f"load_state found no recovery tracker under --load {requested_load!r}; loading the state the run "
-                f"started from"
-            )
+            logger.info("No checkpoint to resume; loading initial weights from %r", ckpt_load_config.load)
             overrider_for_loading = {}
             reset_optim = ckpt_load_config.finetune or ckpt_load_config.no_load_optim
             if reset_optim:
