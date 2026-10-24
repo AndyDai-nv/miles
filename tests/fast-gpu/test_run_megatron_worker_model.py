@@ -14,6 +14,7 @@ import torch
 
 from miles.backends.megatron_utils import checkpoint
 from miles.backends.megatron_utils.megatron_config import MegatronArgsNamespace
+from miles.utils.args.custom_function import CustomFunctionConfig
 from miles.utils.args.runtime import TrainerConfig
 from miles.utils.debug_utils.run_megatron.worker import main as worker
 
@@ -26,7 +27,7 @@ class TestStandaloneModelConstruction:
         """Megatron model construction temporarily permits derived fields without leaking mutability."""
         backend = MegatronArgsNamespace(load=None, model_type="before")
         args = TrainerConfig.model_construct(
-            backend=backend, custom_model_provider_path="test.unused_provider"
+            backend=backend, custom_model_provider_path=CustomFunctionConfig(path="test.unused_provider")
         )
         model = torch.nn.Linear(2, 2).eval()
         calls: list[bool] = []
@@ -60,7 +61,7 @@ class TestStandaloneModelConstruction:
         (tmp_path / "latest_checkpointed_iteration.txt").write_text("7")
         args = TrainerConfig.model_construct(
             backend=MegatronArgsNamespace(spec=None, load=str(tmp_path), finetune=False),
-            custom_model_provider_path="test.unused_provider",
+            custom_model_provider_path=CustomFunctionConfig(path="test.unused_provider"),
             lora_rank=0,
         )
         model = torch.nn.Linear(2, 2).eval()
