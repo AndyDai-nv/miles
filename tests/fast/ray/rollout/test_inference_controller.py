@@ -28,7 +28,7 @@ from miles.utils.workers.rpc.client.handle import RpcWorkerHandle
 from miles.utils.workers.rpc.common.metadata import collect_rpc_method_specs
 from miles.utils.workers.worker_info import WorkerInfo
 from miles.utils.workers.worker_provider.base import BaseWorkerProvider, CellInfo, CellReconcileFn, StopWatchFn
-from miles.utils.workers.worker_spec import HostAndPort, NamedHostAndPorts, WorkerMetaContext
+from miles.utils.workers.worker_spec import HostAndPort, NamedHostAndPorts
 
 _RUN_UUID = "run-uuid-1"
 
@@ -765,7 +765,7 @@ class TestEngineMetaContract:
             alive=True,
             worker_names=["inference-engine-0-0-1-0"],
             workers_hash="pseudo-hash-0",
-            meta=spec.meta(WorkerMetaContext(cell_index=1)),
+            meta=spec.static_meta.resolve(cell_index=1),
         )
 
         assert _compute_server_cell_meta_from_info(info) == ServerCellMetadata(
