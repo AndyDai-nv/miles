@@ -10,8 +10,9 @@ from miles.backends.megatron_utils import checkpoint, model
 from miles.backends.megatron_utils.megatron_config import MegatronTrainerConfig
 from miles.ray.specs.train import TrainerControllerSpec
 from miles.ray.train.init_request import TrainerControllerInitRequest
-from miles.utils.args.runtime import AllConfig, TrainerConfig
+from miles.utils.args.runtime import OrchestratorConfig, TrainerConfig
 from miles.utils.multi_policy import utils as multi_policy_utils
+from miles.utils.workers.backend_capability.base import BackendCapability
 
 
 @dataclass
@@ -52,7 +53,7 @@ class _Rollout:
 
 @dataclass
 class _FreshPolicyStartup:
-    args: AllConfig
+    args: OrchestratorConfig
     handles: dict[str, _LoadingTrainer]
     rollout: _Rollout
 
@@ -77,10 +78,10 @@ def fresh_policy_startup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Fr
     handles = {args.trainer_id: _LoadingTrainer(args=args) for args in TrainerControllerSpec.slice_configs(all_args)}
 
     def create_handles(
-        args: AllConfig,
+        args: OrchestratorConfig,
         *,
         trainer_configs: list[MegatronTrainerConfig],
-        capability: object,
+        capability: BackendCapability,
     ) -> dict[str, _LoadingTrainer]:
         return {config.trainer_id: handles[config.trainer_id] for config in trainer_configs}
 
@@ -90,4 +91,4 @@ def fresh_policy_startup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Fr
     monkeypatch.setattr(model, "check_peak_gpu_memory_after_load", lambda args: None)
     monkeypatch.setattr(model, "check_model_hashes", lambda *args: None)
 
-    return _FreshPolicyStartup(args=all_args, handles=handles, rollout=_Rollout())
+    return _FreshPolicyStartup(args=OrchestratorConfig.slice_from(all_args), handles=handles, rollout=_Rollout())

@@ -1,12 +1,9 @@
 from unittest.mock import AsyncMock
 
 import pytest
-from tests.fast.utils.multi_policy.requested_start_fixtures import _FreshPolicyStartup, fresh_policy_startup
+from tests.fast.utils.multi_policy.conftest import _FreshPolicyStartup
 
 from miles.utils.multi_policy.utils import assert_consistent_restore, create_trainers
-
-
-__all__ = ["fresh_policy_startup"]
 
 
 class TestRequestedPolicyStart:

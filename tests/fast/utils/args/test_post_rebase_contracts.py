@@ -50,7 +50,7 @@ class TestRestoredArgumentContracts:
         args = parser.parse_args(argv)
         assert args.cp_comm_type == expected
         assert args.dsa_impl == "miles"
-        assert args.miles_dsa_topk_backend == "torch"
+        assert args.miles_dsa_topk_backend == "canonical"
 
 
 class TestNativeCheckpointStateFlags:

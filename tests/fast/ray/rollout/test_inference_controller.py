@@ -290,9 +290,12 @@ class _FakeWorkerProvider(BaseWorkerProvider):
 
 class _RecordingInferenceControllerEvalFleet:
     def __init__(self, info: EvalFleetInfo):
-        self.info = info
+        self._info = info
         self.pins: list[dict] = []
         self.checked_versions: list[str] = []
+
+    async def info(self) -> EvalFleetInfo:
+        return self._info
 
     async def pin(self, checkpoint_dir: str, weight_version: str) -> EvalFleetPin:
         self.pins.append(dict(checkpoint_dir=checkpoint_dir, weight_version=weight_version))
@@ -1545,7 +1548,7 @@ class TestEvalFleetSurface:
     def test_the_fleet_description_survives_the_wire(self):
         """The executor retargets its eval args to what it decodes, so every field must round-trip."""
         serializer = collect_rpc_method_specs(InferenceController)["get_eval_fleet_info"].serializer
-        info = EvalFleetInfo(router=HostAndPort(host="10.0.0.2", port=31000), num_gpus=2, num_gpus_per_engine=1)
+        info = EvalFleetInfo(router=HostAndPort(host="10.0.0.2", port=31000), engine_gpu_counts=[1, 1])
 
         assert serializer.decode_result(serializer.encode_result(info)) == info
         assert serializer.decode_result(serializer.encode_result(None)) is None
@@ -1588,7 +1591,7 @@ class TestEvalFleetSurface:
     async def test_the_fleet_answers_and_pins_through_the_controller(self):
         """The fleet lives beside its engines: the executor only ever addresses it through the controller."""
         controller = _make_controller({})
-        info = EvalFleetInfo(router=HostAndPort(host="10.0.0.2", port=31000), num_gpus=2, num_gpus_per_engine=1)
+        info = EvalFleetInfo(router=HostAndPort(host="10.0.0.2", port=31000), engine_gpu_counts=[1, 1])
         controller._eval_fleet = _RecordingInferenceControllerEvalFleet(info)
 
         assert await controller.get_eval_fleet_info() == info
