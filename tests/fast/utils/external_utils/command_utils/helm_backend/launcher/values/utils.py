@@ -1,7 +1,9 @@
 from miles.ray.specs.inference import POOL_CATEGORY_INFERENCE_ENGINE
 from miles.ray.specs.train import POOL_CATEGORY_TRAINER_ENGINE
+from miles.utils.external_utils.command_utils.helm_backend.launcher.values.builder import build_values
+from miles.utils.external_utils.command_utils.helm_backend.launcher.values.helm_values_types import MilesRunChartValues
 from miles.utils.external_utils.command_utils.helm_backend.launcher.values.misc import LaunchPlan
-from miles.utils.workers.worker_spec import BaseCommandSpec, BaseServeSpec, PortInfo, SchedulingSpec
+from miles.utils.workers.worker_spec import BaseCommandSpec, BaseServeSpec, BaseSpec, PortInfo, SchedulingSpec
 
 LAYOUT = LaunchPlan(
     run_id="260101-000000-000",
@@ -93,3 +95,7 @@ def session_client() -> BaseCommandSpec:
         launch_command=lambda ctx: "python -m executor --session-servers "
         + ",".join(addrs["primary"].addr for addrs in ctx.pool_addrs["session-server"]),
     )
+
+
+def build_values_as_launched(specs: list[BaseSpec], plan: LaunchPlan) -> MilesRunChartValues:
+    return build_values(specs, plan)
