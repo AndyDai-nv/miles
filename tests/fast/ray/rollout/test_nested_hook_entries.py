@@ -1,8 +1,7 @@
 from typing import Any
 
 import pytest
-from tests.fast.ray.rollout.conftest import make_rollout_config
-from tests.fast.ray.rollout.test_rollout_executor import FakeInferenceController, FakeInferenceControllerProvider
+from tests.fast.ray.rollout.conftest import FakeInferenceTopologyProvider, make_rollout_config
 from tests.fast.ray.rollout.nested_hook_fixtures import (
     _generate,
     _HookBoundaryReached,
@@ -13,6 +12,7 @@ from tests.fast.ray.rollout.nested_hook_fixtures import (
 from miles.ray.rollout.eval_fleet import EvalFleetInfo
 from miles.ray.rollout.rollout_executor import RolloutExecutor
 from miles.rollout.inference_rollout import inference_rollout_common
+from miles.utils.args.component_rollout import InferenceRuntimeImmutState
 from miles.utils.args.custom_function import CustomFunctionConfig
 from miles.utils.args.custom_view import ImmutableNamespace
 from miles.utils.eval_config import EvalDatasetConfig
@@ -55,7 +55,7 @@ class TestNestedHookEntries:
                 ]
             }
         )
-        provider = FakeInferenceControllerProvider(FakeInferenceController())
+        provider = FakeInferenceTopologyProvider(InferenceRuntimeImmutState(engine_count=0, gpu_count=0))
         executor = RolloutExecutor(
             args=args, router_providers=[], session_server_provider=None, inference_controller_provider=provider
         )
