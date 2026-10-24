@@ -13,6 +13,7 @@ from tests.fast.backends.megatron_utils.explicit_peer_config_fixtures import (
 from tests.fast.backends.megatron_utils.test_actor import actor_module
 from tests.fast.backends.megatron_utils.test_checkpoint_transfer import state_dict
 
+from miles.backends.megatron_utils.checkpoint_request import CHECKPOINT_LOAD_FIELDS, MegatronCkptLoadConfig
 from miles.utils.ft_utils.process_group_utils import GroupInfo
 
 __all__ = ["actor_module", "state_dict", "peer_checkpoint_boundary"]
@@ -45,20 +46,18 @@ class TestExplicitPeerCheckpointConfig:
         boundary.transport.recv_payload = boundary.transport.sent_payloads[0]
         manager = boundary.transfer_module.recv_ckpt(indep_dp=group, src_rank=0)
         peer = object.__new__(boundary.actor_module.MegatronTrainRayActor)
-        peer.args = _persistent_trainer_args(
-            pretrained_checkpoint=None,
-            load=None,
-            no_load_optim=False,
-            no_load_rng=False,
-            finetune=False,
-            ckpt_step=None,
-        )
+        peer.args = _persistent_trainer_args(pretrained_checkpoint=None)
         peer.role = "critic"
         peer.model = [model]
         peer.optimizer = object()
         peer.opt_param_scheduler = None
         context = {"local_checkpoint_manager": manager}
-        output = peer._load_state_core(checkpointing_context=context, overrider_for_loading={})
+        request = MegatronCkptLoadConfig.for_peer_recovery()
+
+        with request.apply(peer.args.backend):
+            output = peer._load_state_core(
+                checkpointing_context=context, overrider_for_loading={}, resume_from_ckpt=request.resume_from_ckpt
+            )
 
         [saved] = boundary.save_calls
         assert saved["iteration"] == 17
@@ -81,6 +80,8 @@ class TestExplicitPeerCheckpointConfig:
         assert boundary.load_calls[0]["ddp_model"] is peer.model
         assert output.loaded_rollout_id == 17
         assert output.start_rollout_id == 18
+        assert CHECKPOINT_LOAD_FIELDS.isdisjoint(vars(peer.args.backend))
+        assert CHECKPOINT_LOAD_FIELDS.isdisjoint(vars(donor.args.backend))
 
     @pytest.mark.parametrize("model_tag,expected_step", [("ref", 7), ("teacher", 11)])
     def test_an_auxiliary_load_passes_the_live_trainer_config_to_the_real_checkpoint_loader(
@@ -95,15 +96,19 @@ class TestExplicitPeerCheckpointConfig:
         actor.args = _persistent_trainer_args(ref_ckpt_step=7, opd_teacher_ckpt_step=11)
         actor.model = []
         actor.weights_backuper = Mock()
-        with actor.args.backend.mutable():
-            actor.args.backend.load = "/original/trainer"
-            actor.args.backend.no_load_optim = False
-            actor.args.backend.no_load_rng = False
-            actor.args.backend.finetune = False
-            actor.args.backend.ckpt_step = 3
-        original = dict(vars(actor.args.backend))
-        actor.load_other_checkpoint(model_tag=model_tag, path=str(path))
-        assert vars(actor.args.backend) == original
+        request = MegatronCkptLoadConfig(
+            load="/original/trainer",
+            no_load_optim=False,
+            no_load_rng=False,
+            finetune=False,
+            ckpt_step=3,
+            resume_from_ckpt=True,
+        )
+
+        with request.apply(actor.args.backend):
+            original = dict(vars(actor.args.backend))
+            actor.load_other_checkpoint(model_tag=model_tag, path=str(path))
+            assert vars(actor.args.backend) == original
 
         [snapshot] = boundary.snapshot_calls
         assert snapshot["args"] is actor.args
@@ -114,5 +119,6 @@ class TestExplicitPeerCheckpointConfig:
         assert snapshot["backend"]["finetune"] is True
         assert boundary.load_calls[0]["ddp_model"] is actor.model
         assert boundary.load_calls[0]["skip_load_to_model_and_opt"] is False
+        assert CHECKPOINT_LOAD_FIELDS.isdisjoint(vars(actor.args.backend))
         actor.weights_backuper.backup.assert_called_once_with(model_tag)
         assert actor._active_model_tag == model_tag

@@ -15,7 +15,6 @@ from miles.backends.megatron_utils.megatron_config import (
     ACTOR_ROLE,
     CRITIC_ROLE,
     has_megatron_checkpoint,
-    resolve_args_checkpoint_load,
     resolve_megatron_config,
     resolve_mtp_num_layers,
 )
@@ -1094,8 +1093,6 @@ def miles_validate_args(args):
 
     # TODO: refactor
     args.requested_load = args.load
-    if args.train_backend == "megatron" and args.megatron_config is None:
-        resolve_args_checkpoint_load(args)
 
     if args.eval_interval is not None:
         assert args.eval_datasets, "Evaluation datasets must be configured when eval_interval is set."
@@ -1208,7 +1205,7 @@ def miles_validate_args(args):
         )
         args.critic_num_gpus_per_node = args.actor_num_gpus_per_node
         args.critic_num_nodes = args.actor_num_nodes
-    if args.critic_load is None:
+    if args.critic_load is None and args.train_backend != "megatron":
         args.critic_load = args.load
     if args.critic_lr is None:
         args.critic_lr = args.lr

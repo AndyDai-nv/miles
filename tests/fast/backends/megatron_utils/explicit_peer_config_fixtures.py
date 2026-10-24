@@ -93,4 +93,14 @@ def peer_checkpoint_boundary(
 def _persistent_trainer_args(**values: Any) -> Any:
     from tests.fast.fixtures.args_fixtures import make_trainer_args
 
-    return make_trainer_args(**{"spec": None, **values})
+    from miles.backends.megatron_utils.checkpoint_request import CHECKPOINT_LOAD_FIELDS
+
+    args = make_trainer_args(**{"spec": None, **values})
+    args.backend = type(args.backend)(
+        **{
+            name: value
+            for name, value in vars(args.backend).items()
+            if name not in CHECKPOINT_LOAD_FIELDS | {"requested_load"}
+        }
+    )
+    return args
