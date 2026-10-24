@@ -164,6 +164,7 @@ def load_checkpoint(
             )
         if ckpt_step is not None and not args.backend.finetune and result_iteration != ckpt_step:
             raise ValueError(f"Requested checkpoint step {ckpt_step}, but Megatron loaded step {result_iteration}")
+        restored_trained_iteration = not args.backend.finetune
     else:
         if args.backend.exit_on_missing_checkpoint and not has_hf_checkpoint(load_path):
             raise FileNotFoundError(f"No checkpoint found under --load={load_path!r}")
@@ -173,7 +174,7 @@ def load_checkpoint(
             args=args,
             load_path=load_path,
         )
-    restored_trained_iteration = not args.backend.finetune
+        restored_trained_iteration = False
 
     ModelCompanionSampleConsumptionUtils.clear_for_finetune(ddp_model, args=args.backend)
 
