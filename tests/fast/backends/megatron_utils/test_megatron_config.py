@@ -430,7 +430,7 @@ class TestResolveArgsCheckpointLoad:
         """--load points at a directory the first run has not written yet, which load_checkpoint asserts on."""
         args = _make_checkpoint_args(tmp_path, megatron_to_hf_mode="bridge")
 
-        resolve_args_checkpoint_load(args)
+        resolve_args_checkpoint_load(args, role="actor")
 
         assert args.load == str(tmp_path / "ref")
         assert args.start_rollout_id == 0
@@ -439,7 +439,7 @@ class TestResolveArgsCheckpointLoad:
         """Without --ref-load the HF weights are the only thing the bridge can start from."""
         args = _make_checkpoint_args(tmp_path, megatron_to_hf_mode="bridge", ref_load=None)
 
-        resolve_args_checkpoint_load(args)
+        resolve_args_checkpoint_load(args, role="actor")
 
         assert args.load == str(tmp_path / "hf")
 
@@ -448,7 +448,7 @@ class TestResolveArgsCheckpointLoad:
         load = _write_megatron_checkpoint(tmp_path)
         args = _make_checkpoint_args(tmp_path, megatron_to_hf_mode="bridge", load=load)
 
-        resolve_args_checkpoint_load(args)
+        resolve_args_checkpoint_load(args, role="actor")
 
         assert args.load == load
         assert args.start_rollout_id is None
@@ -457,7 +457,7 @@ class TestResolveArgsCheckpointLoad:
         """Loading an optimizer state and rng that were never written aborts the very first step."""
         args = _make_checkpoint_args(tmp_path)
 
-        resolve_args_checkpoint_load(args)
+        resolve_args_checkpoint_load(args, role="actor")
 
         assert (args.no_load_optim, args.no_load_rng, args.finetune) == (True, True, True)
         assert args.load == str(tmp_path / "ref")
@@ -467,7 +467,7 @@ class TestResolveArgsCheckpointLoad:
         """--ref-ckpt-step names which iteration of the reference weights to read."""
         args = _make_checkpoint_args(tmp_path, ref_ckpt_step=7)
 
-        resolve_args_checkpoint_load(args)
+        resolve_args_checkpoint_load(args, role="actor")
 
         assert args.ckpt_step == 7
 
@@ -476,7 +476,7 @@ class TestResolveArgsCheckpointLoad:
         load = _write_megatron_checkpoint(tmp_path)
         args = _make_checkpoint_args(tmp_path, load=load, ref_ckpt_step=7)
 
-        resolve_args_checkpoint_load(args)
+        resolve_args_checkpoint_load(args, role="actor")
 
         assert args.load == load
         assert (args.no_load_optim, args.no_load_rng, args.finetune) == (False, False, False)
@@ -492,7 +492,7 @@ class TestResolveArgsCheckpointLoad:
         load = str(tmp_path / "missing")
         args = _make_checkpoint_args(tmp_path, load=load, megatron_to_hf_mode=mode, **selector)
 
-        resolve_args_checkpoint_load(args)
+        resolve_args_checkpoint_load(args, role="actor")
 
         assert args.load == load
         assert args.requested_load == load
@@ -510,7 +510,7 @@ class TestResolveArgsCheckpointLoad:
         args = _make_checkpoint_args(tmp_path, load=None, **selector)
 
         with pytest.raises(ValueError, match="requires --load"):
-            resolve_args_checkpoint_load(args)
+            resolve_args_checkpoint_load(args, role="actor")
 
 
 class TestHasMegatronCheckpoint:
@@ -890,6 +890,7 @@ class TestSynthesizedCriticTrainer:
 
     @pytest.mark.parametrize("native", [False, True])
     def test_critic_initialization_uses_the_step_only_for_native_checkpoints(self, tmp_path, native):
+        """Runtime loading clears an actor-only step when the critic initializes from HF weights."""
         critic_load = tmp_path / "critic"
         critic_load.mkdir()
         (critic_load / "config.json").write_text("{}")
@@ -906,6 +907,8 @@ class TestSynthesizedCriticTrainer:
         actor, critic = [
             compute_trainer_args(args, trainer) for trainer in resolve_megatron_config(args, base_args={}).trainers
         ]
+
+        resolve_args_checkpoint_load(critic, role="critic")
 
         assert actor.ckpt_step == args.ckpt_step == 7
         assert critic.load == str(critic_load)
