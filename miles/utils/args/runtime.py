@@ -1,4 +1,4 @@
-from pydantic import ConfigDict, model_validator
+from pydantic import model_validator
 from typing_extensions import Self
 
 from miles.backends.fsdp_utils.config import FsdpArgsNamespace
@@ -37,6 +37,7 @@ from miles.utils.args.configs.router import RouterConfig
 from miles.utils.args.configs.run_uuid import RunUuidConfig
 from miles.utils.args.configs.session import SessionConfig
 from miles.utils.args.configs.tensorboard import TensorboardConfig
+from miles.utils.args.configs.tinker import TinkerConfig
 from miles.utils.args.configs.train import TrainConfig
 from miles.utils.args.configs.wandb import WandbConfig
 from miles.utils.args.runtime_base import BaseLeafConfig
@@ -293,10 +294,8 @@ class AllConfig(
     RolloutOnlyConfig,
     InferenceControllerOnlyConfig,
     MultiLoraOnlyConfig,
+    TinkerConfig,
 ):
-    # TODO: Remove extra="allow" after backend, custom, and derived fields have explicit config owners.
-    model_config = ConfigDict(extra="allow")
-
     # TODO: Unify trainer descriptions after zhichen's training backend refactor; FSDP also uses these descriptions.
     raw_megatron: MegatronConfig
     raw_fsdp: FsdpArgsNamespace | None
