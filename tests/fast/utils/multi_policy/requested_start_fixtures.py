@@ -80,6 +80,7 @@ def fresh_policy_startup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Fr
         args: AllConfig,
         *,
         trainer_configs: list[MegatronTrainerConfig],
+        capability: object,
     ) -> dict[str, _LoadingTrainer]:
         return {config.trainer_id: handles[config.trainer_id] for config in trainer_configs}
 

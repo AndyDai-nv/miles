@@ -19,7 +19,7 @@ class TestRequestedPolicyStart:
         assert all(handle.args.start_rollout_id is None for handle in startup.handles.values())
         rollout = AsyncMock()
 
-        trainers = await create_trainers(startup.args, rollout_executor=rollout)
+        trainers = await create_trainers(startup.args, rollout_executor=rollout, capability=object())
 
         assert {name: trainer.start_rollout_id for name, trainer in trainers.items()} == {"solver": 9, "verifier": 9}
         rollout.load.assert_awaited_once_with(8, completed_rollout_ids={"solver": 8, "verifier": 8})
