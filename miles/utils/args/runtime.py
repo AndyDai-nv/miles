@@ -1,16 +1,13 @@
 from pydantic import model_validator
 from typing_extensions import Self
 
-from miles.backends.fsdp_utils.config import FsdpArgsNamespace
-from miles.backends.megatron_utils.megatron_config import MegatronConfig
-from miles.backends.torchtitan_utils.args_namespace import TorchtitanArgsNamespace
 from miles.utils.args.component_multi_lora import MultiLoraOnlyConfig
 from miles.utils.args.component_orchestrator import OrchestratorOnlyConfig
 from miles.utils.args.component_rollout import InferenceControllerOnlyConfig, RolloutOnlyConfig
 from miles.utils.args.component_shared import SglangFieldsConfig
 from miles.utils.args.component_trainer import TrainerOnlyConfig
 from miles.utils.args.configs.algo import AlgoConfig
-from miles.utils.args.configs.backend_fields import TrainerBackendTraitConfig
+from miles.utils.args.configs.backend_fields import RawTrainerBackendConfig, TrainerBackendTraitConfig
 from miles.utils.args.configs.ci import CiConfig
 from miles.utils.args.configs.cluster import ClusterConfig
 from miles.utils.args.configs.custom_megatron_plugins import (
@@ -45,6 +42,7 @@ from miles.utils.args.runtime_base import BaseLeafConfig
 
 class OrchestratorConfig(
     BaseLeafConfig,
+    RawTrainerBackendConfig,
     TrainerBackendTraitConfig,
     OrchestratorOnlyConfig,
     RunUuidConfig,
@@ -189,6 +187,7 @@ class InferenceControllerConfig(
 
 class RolloutConfig(
     BaseLeafConfig,
+    RawTrainerBackendConfig,
     TrainerBackendTraitConfig,
     RolloutOnlyConfig,
     RunUuidConfig,
@@ -261,6 +260,7 @@ class MultiLoraConfig(
 
 class AllConfig(
     BaseLeafConfig,
+    RawTrainerBackendConfig,
     TrainerBackendTraitConfig,
     RunUuidConfig,
     ClusterConfig,
@@ -296,7 +296,4 @@ class AllConfig(
     MultiLoraOnlyConfig,
     TinkerConfig,
 ):
-    # TODO: Unify trainer descriptions after zhichen's training backend refactor; FSDP also uses these descriptions.
-    raw_megatron: MegatronConfig
-    raw_fsdp: FsdpArgsNamespace | None
-    raw_torchtitan: TorchtitanArgsNamespace | None
+    pass
