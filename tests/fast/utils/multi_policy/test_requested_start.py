@@ -19,6 +19,6 @@ class TestRequestedPolicyStart:
         trainers = await create_trainers(startup.args, rollout_executor=rollout, capability=object())
 
         assert {name: trainer.start_rollout_id for name, trainer in trainers.items()} == {"solver": 9, "verifier": 9}
-        rollout.load.assert_awaited_once_with(8, completed_rollout_ids={"solver": 8, "verifier": 8})
+        rollout.load.assert_awaited_once_with(8, load=None, completed_rollout_ids={"solver": 8, "verifier": 8})
         with pytest.raises(AssertionError, match="holds no record"):
             assert_consistent_restore(startup.args, trainers=trainers, leader_model_id="solver")
