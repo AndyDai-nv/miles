@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from typing import Any, ClassVar, Self
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 
 from miles.utils.args.runtime_base import BaseLeafConfig
 from miles.utils.workers.worker_spec import (
@@ -24,7 +24,7 @@ def _no_ctor_kwargs(_ctx: WorkerCtorContext) -> dict[str, Any]:
 
 class FakeCommandSpec(BaseCommandSpec):
     args: Any = None
-    scheduling: SchedulingSpec = Field(alias="fixed_scheduling")
+    scheduling: SchedulingSpec = Field(validation_alias=AliasChoices("fixed_scheduling", "scheduling"))
     env_vars: Callable[[WorkerLaunchContext], dict[str, str]] = _no_env_vars
     command: Callable[[LaunchCommandContext], str]
 
@@ -43,7 +43,7 @@ class FakeServeSpec(BaseServeSpec):
     worker_type: ClassVar[str] = "fake"
     config_class: ClassVar[type[BaseLeafConfig]] = BaseLeafConfig
     args: Any = None
-    scheduling: SchedulingSpec = Field(alias="fixed_scheduling")
+    scheduling: SchedulingSpec = Field(validation_alias=AliasChoices("fixed_scheduling", "scheduling"))
     env_vars: Callable[[WorkerLaunchContext], dict[str, str]] = _no_env_vars
     make_ctor_kwargs: Callable[[WorkerCtorContext], dict[str, Any]] = _no_ctor_kwargs
 
