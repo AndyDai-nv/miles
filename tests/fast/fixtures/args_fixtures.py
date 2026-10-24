@@ -73,8 +73,15 @@ _COMMON_TEST_ARGV = ['--rollout-batch-size', '2', '--num-rollout', '1', '--actor
 _MEGATRON_TEST_ARGV = ['--train-backend', 'megatron', *_COMMON_TEST_ARGV, '--num-layers', '1', '--hidden-size', '128', '--num-attention-heads', '2']
 
 
+_FSDP_TEST_ARGV = ['--train-backend', 'fsdp', *_COMMON_TEST_ARGV]
+
+
 def parse_megatron_test_config(*argv: str) -> AllConfig:
     return _parse_test_config([*_MEGATRON_TEST_ARGV, *argv])
+
+
+def parse_fsdp_test_config(*argv: str) -> AllConfig:
+    return _parse_test_config([*_FSDP_TEST_ARGV, *argv])
 
 
 def _parse_test_config(argv: list[str]) -> AllConfig:
@@ -100,10 +107,6 @@ def make_trainer_args(*, train_backend: str = "megatron", **values: Any) -> Conf
     backend = backend_cls(**{name: value for name, value in values.items() if name not in trainer_fields})
     trainer = {name: value for name, value in values.items() if name in trainer_fields}
     return ConfigNamespace(**trainer, backend=backend)
-
-
-def parse_fsdp_test_config(*argv: str) -> Any:
-    return _parse_test_config([*['--train-backend', 'fsdp', '--rollout-batch-size', '2', '--num-rollout', '1', '--actor-num-gpus-per-node', '1', '--micro-batch-size', '1'], *argv])
 
 
 _TRAIN_BACKEND_DEFAULTS.update(fp16=False)
