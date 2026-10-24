@@ -71,7 +71,7 @@ class TestNestedHookEntries:
                 train_args = executor.generate_rollout.constructor_input.args
                 eval_args = executor.eval_generate_rollout.constructor_input.args
                 await executor.set_eval_fleet_info(
-                    EvalFleetInfo(router=HostAndPort(host="eval", port=30001), num_gpus=1, num_gpus_per_engine=1)
+                    EvalFleetInfo(router=HostAndPort(host="eval", port=30001), engine_gpu_counts=[1])
                 )
                 fleet_args = executor._eval_fleet._state.args
 
