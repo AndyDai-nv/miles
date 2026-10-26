@@ -1,4 +1,5 @@
 import importlib
+import inspect
 import logging
 import os
 import tempfile
@@ -35,13 +36,17 @@ def _model_package(name: str) -> ModuleType:
     )
 
 
-def resolve_model_spec(args: TrainerConfig) -> ModelSpec:
+def resolve_model_spec(args: TrainerConfig, *, hf_assets_path: str | None = None) -> ModelSpec:
     module = _model_package(args.backend.titan_model_name)
     registry = getattr(
         module, "model_registry", None
     )  # config-access-exempt: imported TorchTitan model packages may omit the registry entry point
     if registry is None:
         raise ValueError(f"{module.__name__} exposes no model_registry(); cannot build a ModelSpec")
+    if "hf_config" in inspect.signature(registry).parameters:
+        if hf_assets_path is None:
+            raise ValueError(f"{module.__name__} sizes its model from the HF config; pass hf_assets_path")
+        return registry(args.backend.titan_model_flavor, attn_backend="flex", hf_config=load_hf_config(hf_assets_path))
     return registry(args.backend.titan_model_flavor, attn_backend="flex")
 
 
@@ -68,7 +73,7 @@ def build_trainer_config(
         )
 
     config = Trainer.Config()
-    config.model_spec = resolve_model_spec(args)
+    config.model_spec = resolve_model_spec(args, hf_assets_path=hf_assets_path)
     if ties_embeddings:
         config.model_spec.model.enable_weight_tying = True
         logger.info("Checkpoint ties lm_head to the embedding; excluding lm_head.weight from the HF export")
