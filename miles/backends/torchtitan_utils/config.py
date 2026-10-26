@@ -94,6 +94,7 @@ def build_trainer_config(
     dp_size = parallel_dims.dp_replicate * parallel_dims.dp_shard
 
     config.training.seq_len = args.backend.seq_length
+    config.training.enable_cpu_offload = args.backend.optimizer_cpu_offload
     if parallel_dims.pp_enabled and args.backend.global_batch_size % (dp_size * args.backend.micro_batch_size):
         raise ValueError(
             f"--global-batch-size {args.backend.global_batch_size} must be a multiple of dp * micro_batch_size "
