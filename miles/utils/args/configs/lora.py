@@ -9,6 +9,7 @@ class LoraConfig(BaseConfig):
     lora_A_init_method: str
     lora_B_init_method: str
     multi_lora: bool
+    lora_sync_sends_base: bool
     hf_lora_targets: list[str] | None = None
     lora_adapter_targets: list[str] | Literal["all-linear"] | None = None
 
