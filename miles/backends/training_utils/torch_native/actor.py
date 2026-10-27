@@ -1,4 +1,3 @@
-import functools
 import logging
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, nullcontext
@@ -38,7 +37,6 @@ from miles.ray.train_actor import TrainRayActor, WeightUpdateOutput
 from miles.utils.audit_utils.witness.allocator import WitnessInfo
 from miles.utils.distributed_utils import get_gloo_group
 from miles.utils.dp_schedule import TrainParallelConfig
-from miles.utils.flops_utils import flops_args_from_hf_config, fwd_tflops_per_gpu
 from miles.utils.memory_utils import clear_memory, print_memory
 from miles.utils.object_store import StoreObjectRef
 from miles.utils.profile_utils import TrainProfiler
@@ -111,15 +109,6 @@ class TorchNativeTrainRayActor(TrainRayActor):
             is_lora=False,
         )
 
-    @functools.cached_property
-    def _fwd_tflops(self) -> Callable[[list[int]], float] | None:
-        try:
-            flops_args = flops_args_from_hf_config(self.hf_config)
-        except Exception as e:
-            logger.warning(f"MFU will not be reported, {type(self.hf_config).__name__} could not be sized: {e}")
-            return None
-        return lambda seq_lens: fwd_tflops_per_gpu(seq_lens, flops_args, dist.get_world_size())
-
     def save_model(self, rollout_id: int, force_sync: bool = False) -> None:
         if self.args.debug_rollout_only or self.args.backend.save is None:
             return
@@ -181,6 +170,7 @@ class TorchNativeTrainRayActor(TrainRayActor):
             args=self.args,
             is_primary_rank=dist.get_rank() == 0,
             compute_total_fwd_flops=self._fwd_tflops,
+            compute_total_train_flops=self._train_tflops,
         )
         self._heartbeat.bump()
         return TrainStepOutput(outcome=TrainStepOutcome.NORMAL)
