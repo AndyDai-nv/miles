@@ -18,7 +18,7 @@ def materialize_store_columns(args: Namespace, rollout_data: dict, *, read: Call
     """Replace the shard's rollout_store_plan column with the replay columns the inline path carries.
 
     ``read`` takes ``[(ref, names)]`` and returns one stash per entry, as ``OutputStore.read_many``
-    bound to its stash type and buffer size does. Reads again on every call, so an FT retry works.
+    bound to its stash type does. Reads again on every call, so an FT retry works.
     """
     entries = rollout_data.pop("rollout_store_plan", None)
     if entries is None:
@@ -55,7 +55,7 @@ def _read_objects(plans: Sequence[StorePlan], read: Callable, *, support_topk: i
     try:
         stashes = read(list(requests.values()))
     except (KeyError, ValueError) as e:
-        # A missing object or array, or an array larger than the buffer: no retry can fix it.
+        # A missing object or array, or one whose size differs from its ref: no retry can fix it.
         raise StorePlanError(f"cannot read this shard's output store objects: {e}") from e
     return {
         key: {

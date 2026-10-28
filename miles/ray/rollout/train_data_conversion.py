@@ -9,6 +9,7 @@ from miles.utils.audit_utils.sample_ownership.recorder import SampleOwnershipRec
 from miles.utils.dp_schedule import TrainParallelConfig, build_dp_schedule
 from miles.utils.lora.utils import is_multi_lora_enabled
 from miles.utils.object_store import ValueSpec
+from miles.utils.output_store.dropped import has_inline_replay
 from miles.utils.output_store.plan import FIELDS, SamplingMaskSegments, StorePlanError
 from miles.utils.rollout_topk_logprobs import requests_support_logprobs
 from miles.utils.seqlen_balancing import get_seqlen_balanced_partitions
@@ -136,6 +137,12 @@ def convert_samples_to_train_data(
     if has_store_plan:
         _check_store_plans(args, samples)
         train_data["rollout_store_plan"] = [sample.rollout_store_plan.to_dict() for sample in samples]
+    elif args.use_output_store and any(has_inline_replay(sample) for sample in samples):
+        # The switch only reaches requests built by compute_request_payload or the session server.
+        raise StorePlanError(
+            "--use-output-store is set, but the samples carry inline replay arrays and no output store plan: "
+            "the generate function builds its own SGLang requests"
+        )
 
     if k := args.rollout_top_logprobs_num:
         # Support mode with the output store: the trainer builds the candidates from the stored mask.
