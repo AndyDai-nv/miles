@@ -108,6 +108,7 @@ class TestDispose:
             enable_event_analyzer=False,
         )
         executor._metric_checker = None
+        executor._delete_store_refs = None
         executor._output_snapshotter = _RolloutExecutorOutputSnapshotter(args=_make_runtime_args())
         executor._output_snapshotter.capture(trainer_model_id=None, rollout_id=6, data=[Sample(index=10)], metadata={})
         event_logger = EventLogger(log_dir=tmp_path, source=SimpleProcessIdentity(component="rollout_executor"))
@@ -161,6 +162,7 @@ class TestDispose:
         executor.data_source = object()
         executor.args = Namespace()
         executor._metric_checker = None
+        executor._delete_store_refs = None
         monkeypatch.setattr(rollout_executor_module, "CheckpointEvalFn", _SynchronousDisposable)
         monkeypatch.setattr(rollout_executor_module.event_analyzer, "run_analysis_from_args", lambda _args: None)
         monkeypatch.setattr(
@@ -171,6 +173,33 @@ class TestDispose:
         await executor.dispose()
 
         assert disposed == ["train", "eval"]
+
+    async def test_a_run_with_the_output_store_sweeps_it_once_after_the_rest_of_dispose(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Last, so the producers have stopped writing and a failed CI check raises after the other teardown."""
+        disposed: list[str] = []
+        executor = RolloutExecutor.__new__(RolloutExecutor)
+        executor._disposed = False
+        executor.use_legacy_rollout_v1 = False
+        executor.generate_rollout = _SynchronousDisposable(disposed, "train")
+        executor.eval_generate_rollout = _SynchronousDisposable(disposed, "eval")
+        executor.data_source = object()
+        executor.args = make_args(ci_test=True, fully_async=False, partial_rollout=False)
+        executor._metric_checker = None
+        executor._delete_store_refs = lambda refs: None
+        executor._unreleased_store_refs = {}
+        monkeypatch.setattr(rollout_executor_module, "CheckpointEvalFn", _SynchronousDisposable)
+        monkeypatch.setattr(rollout_executor_module.event_analyzer, "run_analysis_from_args", lambda _args: None)
+        monkeypatch.setattr(
+            rollout_executor_module.event_analyzer, "run_sample_ownership_analysis", lambda *, args: None
+        )
+        monkeypatch.setattr(rollout_executor_module, "sweep_output_store", lambda args: disposed.append("sweep") or 0)
+
+        await executor.dispose()
+        await executor.dispose()
+
+        assert disposed == ["train", "eval", "sweep"]
 
     async def test_the_final_ownership_check_runs_before_the_run_ends(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Violations that only mature after the last get would otherwise never be checked."""
@@ -183,6 +212,7 @@ class TestDispose:
         executor.data_source = object()
         executor.args = Namespace()
         executor._metric_checker = None
+        executor._delete_store_refs = None
         monkeypatch.setattr(rollout_executor_module, "CheckpointEvalFn", _SynchronousDisposable)
         monkeypatch.setattr(rollout_executor_module.event_analyzer, "run_analysis_from_args", lambda _args: None)
         monkeypatch.setattr(
@@ -317,6 +347,7 @@ def _make_executor(tmp_path: Path, rollout_fn: _CountingRolloutFn) -> RolloutExe
     executor._train_parallel_configs_of_model_id = {None: make_train_parallel_config()}
     executor._weight_versions_of_model_id = {}
     executor.last_get_rollout_id_of_model_id = {}
+    executor._unreleased_store_refs = {}
     executor.custom_convert_samples_to_train_data_func = None
     executor.custom_reward_post_process_func = None
     executor._output_snapshotter = _RolloutExecutorOutputSnapshotter(args=executor.args)
