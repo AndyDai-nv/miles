@@ -163,7 +163,15 @@ export async function renderTimeline(view, meta, route) {
       api("/api/timeline/gpu_processes", { t0: f0, t1: f1, lanes: selection }),
     ]);
     engineSeries = overlayMetric
-      ? (await api("/api/timeline/engine_series", { metric: overlayMetric, t0: f0, t1: f1, max_points: 4000 }))
+      ? (
+          await api("/api/timeline/engine_series", {
+            metric: overlayMetric,
+            t0: f0,
+            t1: f1,
+            max_points: 4000,
+            lanes: selection,
+          })
+        )
           .series
       : [];
     fetched = { t0: f0, t1: f1 };
@@ -421,6 +429,7 @@ export async function renderTimeline(view, meta, route) {
 
   // -------------------------------- canvas ----------------------------------
   const canvas = el("canvas", { class: "timeline" });
+  // engineSeries holds only the selected lanes' engines, so the scale is relative to the selection
   const overlayMax = () => Math.max(extent(...engineSeries.map((s) => s.value))[1], 1e-9);
   const memMax = () => Math.max(extent(...Object.values(gpu).map((s) => s.mem_mb))[1], 1);
 
@@ -563,7 +572,7 @@ export async function renderTimeline(view, meta, route) {
 
     overlayScale.textContent =
       overlayMetric && engineSeries.length
-        ? `${overlayMetric.replace("sglang_", "")} scale 0–${fmtNum(overlayMax())}`
+        ? `${overlayMetric.replace("sglang_", "")} scale 0–${fmtNum(overlayMax())} on the selected lanes`
         : "";
   }
 
