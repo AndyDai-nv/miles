@@ -1,5 +1,6 @@
 import pytest
-from tests.fast.ray.rollout.conftest import make_args, make_inference_controller_config
+from tests.fast.fixtures.args_fixtures import parse_fsdp_test_config
+from tests.fast.ray.rollout.conftest import make_args
 
 from miles.backends.dynamo_utils.arguments import configure_dynamo
 from miles.backends.dynamo_utils.config import DynamoConfig
@@ -28,12 +29,13 @@ def test_fault_tolerance_and_api_key_are_accepted(configured_args):
 
 
 def test_dynamo_configuration_survives_controller_config_transport(configured_args):
-    configure_dynamo(configured_args, sglang=configured_args.sglang)
-    config = make_inference_controller_config(configured_args)
+    parsed = parse_fsdp_test_config("--dynamo-config", configured_args.dynamo_config, "--rollout-num-gpus", "1")
+    config = InferenceControllerConfig.slice_from(parsed)
 
     restored = InferenceControllerConfig.model_validate_json(config.model_dump_json())
 
-    assert restored.dynamo_config == configured_args.dynamo_config
+    assert restored.dynamo_config.namespace == "test-run"
+    assert restored.dynamo_config == parsed.dynamo_config
 
 
 @pytest.mark.parametrize(
