@@ -12,6 +12,11 @@ from miles.backends.sglang_utils.sglang_engine import compute_engine_launch_cmd
 from miles.ray.specs.inference import InferenceEngineSpec, RouterSpec
 from miles.router.backend import DynamoRouterBackend, make_router_backend
 from miles.utils.args.configs.scaling import ScalingConfig
+from miles.utils.external_utils.command_utils.helm_backend.launcher.values.builder import (
+    build_values,
+    compute_static_connections,
+)
+from miles.utils.external_utils.command_utils.helm_backend.launcher.values.misc import LaunchPlan
 from miles.utils.workers.launch_gate import GATE_PORT_NAME
 from miles.utils.workers.worker_spec import HostAndPort, LaunchCommandContext, WorkerLaunchContext
 
@@ -170,3 +175,31 @@ def test_frontend_rejects_pd_disaggregation(config):
 
     with pytest.raises(AssertionError, match="dynamo router does not support PD disaggregation"):
         backend.launch_argv(None, model_cfg=args.sglang.models[0], interpreter_prefix=["python"])
+
+
+def test_frontend_command_and_environment_render_through_shared_helm_path(config):
+    args = make_args(dynamo_config=config, sglang_router_port=31000)
+    specs = RouterSpec.create(args)
+    scaling = ScalingConfig.model_validate({name: getattr(args, name) for name in ScalingConfig.model_fields})
+    plan = LaunchPlan(
+        run_id="260101-000000-000",
+        release="miles-run-test",
+        namespace="rl",
+        state_file="",
+        orchestrator_command=[],
+        worker_argv=[],
+    )
+
+    values = build_values(
+        specs,
+        plan,
+        scaling=scaling,
+        static_connections=compute_static_connections(specs, scaling=scaling),
+    )
+
+    (entry,) = values.run.static_workers
+    assert entry.command[entry.command.index("-m") + 1] == "dynamo.frontend"
+    assert entry.command[entry.command.index("--http-host") + 1] == "0.0.0.0"
+    assert entry.command[entry.command.index("--http-port") + 1] == "31000"
+    assert entry.env["NATS_SERVER"] == config.nats_server
+    assert entry.env["DYN_NAMESPACE"] == config.namespace
