@@ -1,11 +1,9 @@
-from types import SimpleNamespace
-
 import pytest
-from tests.fast.ray.rollout.conftest import make_args
+from tests.fast.ray.rollout.conftest import make_args, make_inference_controller_config
 
 from miles.backends.dynamo_utils.arguments import configure_dynamo
 from miles.backends.dynamo_utils.config import DynamoConfig
-from miles.backends.sglang_utils.sglang_api_client import WorkerType
+from miles.utils.args.runtime import InferenceControllerConfig
 
 
 @pytest.fixture
@@ -17,10 +15,6 @@ def configured_args(tmp_path, monkeypatch):
     )
     path = tmp_path / "dynamo.json"
     path.write_text(config.model_dump_json())
-    resolved = SimpleNamespace(
-        models=[SimpleNamespace(server_groups=[SimpleNamespace(worker_type=WorkerType.REGULAR, overrides={})])]
-    )
-    monkeypatch.setattr("miles.backends.dynamo_utils.arguments.resolve_sglang_config", lambda args: resolved)
     monkeypatch.setattr("miles.backends.dynamo_utils.arguments.use_legacy_rollout_v1", lambda: False)
     return make_args(dynamo_config=str(path))
 
@@ -28,9 +22,18 @@ def configured_args(tmp_path, monkeypatch):
 def test_fault_tolerance_and_api_key_are_accepted(configured_args):
     configured_args.ft_components = ["rollout"]
     configured_args.sglang_api_key = "test-key"
-    configure_dynamo(configured_args)
+    configure_dynamo(configured_args, sglang=configured_args.sglang)
     assert configured_args.dynamo_config.namespace == "test-run"
     assert configured_args.sglang_api_key == "test-key"
+
+
+def test_dynamo_configuration_survives_controller_config_transport(configured_args):
+    configure_dynamo(configured_args, sglang=configured_args.sglang)
+    config = make_inference_controller_config(configured_args)
+
+    restored = InferenceControllerConfig.model_validate_json(config.model_dump_json())
+
+    assert restored.dynamo_config == configured_args.dynamo_config
 
 
 @pytest.mark.parametrize(
@@ -48,4 +51,4 @@ def test_fault_tolerance_and_api_key_are_accepted(configured_args):
 def test_incompatible_options_fail_at_startup(configured_args, name, value):
     setattr(configured_args, name, value)
     with pytest.raises(ValueError):
-        configure_dynamo(configured_args)
+        configure_dynamo(configured_args, sglang=configured_args.sglang)
