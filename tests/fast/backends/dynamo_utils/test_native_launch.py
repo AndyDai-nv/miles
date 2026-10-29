@@ -9,10 +9,16 @@ from miles.backends.dynamo_utils.launch import sidecar_env, sidecar_overrides
 from miles.backends.sglang_utils.server_args_utils import parse_server_args_argv
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
 from miles.backends.sglang_utils.sglang_engine import compute_engine_launch_cmd
-from miles.ray.specs.inference import InferenceEngineSpec
+from miles.ray.specs.inference import InferenceEngineSpec, RouterSpec
+from miles.router.backend import DynamoRouterBackend, make_router_backend
 from miles.utils.args.configs.scaling import ScalingConfig
+from miles.utils.external_utils.command_utils.helm_backend.launcher.values.builder import (
+    build_values,
+    compute_static_connections,
+)
+from miles.utils.external_utils.command_utils.helm_backend.launcher.values.misc import LaunchPlan
 from miles.utils.workers.launch_gate import GATE_PORT_NAME
-from miles.utils.workers.worker_spec import HostAndPort, LaunchCommandContext
+from miles.utils.workers.worker_spec import HostAndPort, LaunchCommandContext, WorkerLaunchContext
 
 
 @pytest.fixture
@@ -104,3 +110,96 @@ def test_native_sidecar_arguments_and_upstream_auth_validation(config, api_key):
     assert parsed.api_key == api_key
     assert parsed.tp_size == 2
     handle_deprecated_args(parsed)
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "[::1]", "0.0.0.0"])
+def test_frontend_uses_shared_router_spec_and_preallocation_environment(config, monkeypatch, host):
+    monkeypatch.setenv("NATS_SERVER", "nats://other-run:4222")
+    config = config.model_copy(
+        update={
+            "frontend": config.frontend.model_copy(
+                update={"router_mode": "kv", "extra_args": ("--log-level", "debug")}
+            )
+        }
+    )
+    args = make_args(dynamo_config=config)
+    spec = RouterSpec.create(args)[0]
+    scaling = ScalingConfig.model_validate({name: getattr(args, name) for name in ScalingConfig.model_fields})
+    env_context = WorkerLaunchContext(
+        args=args, cell_index=0, worker_in_cell_index=0, num_workers_per_cell=1, gpu_ids=[]
+    )
+
+    env = spec.env_var(env_context)
+
+    assert isinstance(make_router_backend(args), DynamoRouterBackend)
+    assert spec.name == "inference-router-0"
+    assert spec.scheduling(scaling).num_gpus_per_worker == 0
+    assert env["NATS_SERVER"] == config.nats_server
+    assert env["DYN_NAMESPACE"] == config.namespace
+    assert env["DYN_ROUTER_MIN_INITIAL_WORKERS"] == "0"
+    assert env["DYN_SGLANG_ENABLE_GENERATE"] == "1"
+    assert "DYN_HTTP_HOST" not in env
+    assert "DYN_HTTP_PORT" not in env
+
+    context = LaunchCommandContext(
+        **env_context.model_dump(),
+        scaling=scaling,
+        local_gpu_ids=[],
+        pool_addrs={},
+        self_addrs={"primary": HostAndPort(host=host, port=20000)},
+    )
+    argv = shlex.split(spec.launch_command(context))
+
+    assert argv[: len(spec.interpreter_prefix)] == spec.interpreter_prefix
+    assert argv[len(spec.interpreter_prefix) : len(spec.interpreter_prefix) + 2] == ["-m", "dynamo.frontend"]
+    assert argv[argv.index("--http-host") + 1] == host.strip("[]")
+    assert argv[argv.index("--http-port") + 1] == "20000"
+    assert argv[argv.index("--router-min-initial-workers") + 1] == "0"
+    assert argv[argv.index("--router-mode") + 1] == "kv"
+    assert argv[-2:] == ["--log-level", "debug"]
+
+
+def test_frontend_rejects_explicit_environment_conflicts(config):
+    config = config.model_copy(update={"env": {"NATS_SERVER": "nats://other-run:4222"}})
+    args = make_args(dynamo_config=config)
+    spec = RouterSpec.create(args)[0]
+    context = WorkerLaunchContext(args=args, cell_index=0, worker_in_cell_index=0, num_workers_per_cell=1, gpu_ids=[])
+
+    with pytest.raises(ValueError, match="NATS_SERVER"):
+        spec.env_var(context)
+
+
+def test_frontend_rejects_pd_disaggregation(config):
+    args = make_args(dynamo_config=config, rollout_external_router_pd=True)
+    backend = make_router_backend(args)
+
+    with pytest.raises(AssertionError, match="dynamo router does not support PD disaggregation"):
+        backend.launch_argv(None, model_cfg=args.sglang.models[0], interpreter_prefix=["python"])
+
+
+def test_frontend_command_and_environment_render_through_shared_helm_path(config):
+    args = make_args(dynamo_config=config, sglang_router_port=31000)
+    specs = RouterSpec.create(args)
+    scaling = ScalingConfig.model_validate({name: getattr(args, name) for name in ScalingConfig.model_fields})
+    plan = LaunchPlan(
+        run_id="260101-000000-000",
+        release="miles-run-test",
+        namespace="rl",
+        state_file="",
+        orchestrator_command=[],
+        worker_argv=[],
+    )
+
+    values = build_values(
+        specs,
+        plan,
+        scaling=scaling,
+        static_connections=compute_static_connections(specs, scaling=scaling),
+    )
+
+    (entry,) = values.run.static_workers
+    assert entry.command[entry.command.index("-m") + 1] == "dynamo.frontend"
+    assert entry.command[entry.command.index("--http-host") + 1] == "0.0.0.0"
+    assert entry.command[entry.command.index("--http-port") + 1] == "31000"
+    assert entry.env["NATS_SERVER"] == config.nats_server
+    assert entry.env["DYN_NAMESPACE"] == config.namespace
