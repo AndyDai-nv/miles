@@ -35,6 +35,7 @@ class GenerateState:
     def __init__(self, args: Namespace) -> None:
         # persistent state for the generation process
         self.args = args
+        self.inference_controller_provider = None
         self.tokenizer = load_tokenizer(
             args.hf_checkpoint, chat_template_path=args.chat_template_path, trust_remote_code=True
         )
