@@ -2,11 +2,14 @@
 
 import enum
 import logging
+import os
 from abc import ABC, abstractmethod
 from argparse import Namespace
 from dataclasses import dataclass
 from typing import ClassVar
 
+from miles.backends.dynamo_utils.config import Address
+from miles.backends.dynamo_utils.frontend_args import frontend_env, frontend_launch
 from miles.backends.sglang_utils.router_args_utils import compute_sglang_router_args, router_args_to_argv
 from miles.backends.sglang_utils.sglang_config import ModelConfig
 from miles.router.config import compute_miles_router_config
@@ -20,6 +23,7 @@ logger = logging.getLogger(__name__)
 class RouterKind(str, enum.Enum):
     SGLANG = "sglang"
     MILES = "miles"
+    DYNAMO = "dynamo"
 
 
 @dataclass(frozen=True)
@@ -86,12 +90,36 @@ class MilesRouterBackend(RouterBackend):
         return [*interpreter_prefix, "-m", "miles.router.router", *config_to_argv(router_config)]
 
 
+class DynamoRouterBackend(RouterBackend):
+    kind = RouterKind.DYNAMO
+    features = RouterFeatures(pd_disaggregation=False)
+
+    def env_var(self, ctx: WorkerLaunchContext) -> dict[str, str]:
+        return frontend_env(self.args.dynamo_config, inherited_env=os.environ)
+
+    def _launch_argv(
+        self, ctx: LaunchCommandContext, *, model_cfg: ModelConfig, interpreter_prefix: list[str]
+    ) -> list[str]:
+        primary = ctx.self_addrs["primary"]
+        argv, _ = frontend_launch(
+            self.args.dynamo_config,
+            address=Address(host=primary.host.strip("[]"), port=primary.port),
+            interpreter_prefix=interpreter_prefix,
+            inherited_env=os.environ,
+        )
+        return argv
+
+
 _BACKEND_CLASSES: dict[RouterKind, type[RouterBackend]] = {
     RouterKind.SGLANG: SGLangRouterBackend,
     RouterKind.MILES: MilesRouterBackend,
+    RouterKind.DYNAMO: DynamoRouterBackend,
 }
 
 
 def make_router_backend(args: Namespace) -> RouterBackend:
-    kind = RouterKind.MILES if args.use_miles_router else RouterKind.SGLANG
+    if args.dynamo_config is not None:
+        kind = RouterKind.DYNAMO
+    else:
+        kind = RouterKind.MILES if args.use_miles_router else RouterKind.SGLANG
     return _BACKEND_CLASSES[kind](args)
