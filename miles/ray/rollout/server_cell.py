@@ -1,7 +1,7 @@
 import dataclasses
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -75,6 +75,7 @@ class ServerCell:
             name=f"rollout-cell-{self.meta.cell_id}",
             get_api_client=lambda: self.api_client,
             get_activeness=self._get_health_checker_active_and_epoch,
+            check_serving=self._check_serving_health,
         )
         self._health_checker.start()
 
@@ -84,6 +85,9 @@ class ServerCell:
         return ActiveAndEpoch(
             active=cell_active and controller_active_and_epoch.active, epoch=controller_active_and_epoch.epoch
         )
+
+    async def _check_serving_health(self) -> None:
+        await self._registry.check_health(worker_url=self.server_url, serving=self.is_serving)
 
     def __del__(self) -> None:
         assert isinstance(self._state, StateDisposed), (
@@ -235,6 +239,12 @@ class ServerCell:
         await self._register_with_router(addr_info=self._state.addr_info)
         self._mark_serving()
 
+    async def prepare_weight_update(self) -> None:
+        await self._registry.prepare_update(worker_url=self.server_url)
+
+    async def finish_weight_update(self, weight_version: str | None) -> None:
+        await self._registry.finish_update(worker_url=self.server_url, weight_version=weight_version)
+
     async def _register_with_router(self, addr_info: CellAddrInfo) -> None:
         await self._registry.register(
             worker_url=addr_info.server_url,
@@ -343,6 +353,7 @@ def create_rollout_cell_health_checker(
     name: str,
     get_api_client: Callable[[], SGLangApiClient],
     get_activeness: Callable[[], ActiveAndEpoch],
+    check_serving: Callable[[], Awaitable[None]] | None = None,
 ) -> BaseHealthChecker:
     if "rollout" not in args.ft_components:
         return NoopHealthChecker()
@@ -351,6 +362,8 @@ def create_rollout_cell_health_checker(
 
     async def _check() -> None:
         await get_api_client().health_generate(timeout=config.timeout)
+        if check_serving is not None:
+            await check_serving()
 
     return SimpleHealthChecker(name=name, check_fn=_check, get_activeness=get_activeness, config=config)
 

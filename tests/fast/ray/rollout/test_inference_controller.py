@@ -134,6 +134,9 @@ class _RecordingServer:
     async def onload(self, tags=None):
         self.onload_tags.append(tags)
 
+    async def prepare_weight_update(self):
+        pass
+
     async def dispose(self):
         self.dispose_count += 1
 
@@ -219,6 +222,7 @@ class _FakeUpdatableCell:
         self.api_client = api_client
         self.marked_ready = 0
         self.marked_errored = 0
+        self.finished_versions: list[str | None] = []
         self.mark_errored_error: Exception | None = None
         self.is_errored = False
         self.is_pending_weights = True
@@ -226,6 +230,9 @@ class _FakeUpdatableCell:
 
     async def mark_weights_ready(self) -> None:
         self.marked_ready += 1
+
+    async def finish_weight_update(self, weight_version):
+        self.finished_versions.append(weight_version)
 
     async def mark_errored(self) -> None:
         self.marked_errored += 1
@@ -1818,10 +1825,14 @@ class TestEndUpdateWeightsTakesFailedCellsOutOfService:
 
         updatable = await controller.start_update_weights()
         await controller.end_update_weights(
-            snapshot_cell_id_to_hashes=updatable.snapshot_cell_id_to_hashes, failed_cell_ids=["engine-1"]
+            snapshot_cell_id_to_hashes=updatable.snapshot_cell_id_to_hashes,
+            failed_cell_ids=["engine-1"],
+            weight_version="7",
         )
 
         assert (cells["engine-0"].marked_ready, cells["engine-0"].marked_errored) == (1, 0)
+        assert cells["engine-0"].finished_versions == ["7"]
+        assert cells["engine-1"].finished_versions == []
 
     @pytest.mark.asyncio
     async def test_an_update_that_reached_everything_errors_nothing(self):

@@ -435,6 +435,7 @@ class TestUpdateWeights:
         info = inference_controller.start_update_weights.await_args.kwargs["model_id"]
         assert info is None
         rollout_executor.set_weight_version.assert_awaited_once_with(7, trainer_model_id=None)
+        assert inference_controller.end_update_weights.await_args.kwargs["weight_version"] == "7"
 
     async def test_an_in_loop_fault_hook_failure_prevents_the_weight_update(self, monkeypatch):
         """A failed orchestration fault hook stops the update before its broadcast begins."""
