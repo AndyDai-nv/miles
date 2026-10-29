@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def configure_dynamo(args, *, sglang: SglangConfig) -> None:
-    if not getattr(args, "dynamo_config", None):
+    if not args.dynamo_config:
         args.dynamo_config = None
         return
     args.dynamo_config = load_dynamo_config(Path(args.dynamo_config))
@@ -34,12 +34,12 @@ def configure_dynamo(args, *, sglang: SglangConfig) -> None:
         raise ValueError("Dynamo managed launch requires per-engine dp_size=1")
     if args.sglang_router_policy in ("consistent_hashing", "manual"):
         raise ValueError("Dynamo does not consume X-SMG-Routing-Key; configure frontend.router_mode instead")
-    if getattr(args, "sglang_grpc_mode", False) or getattr(args, "sglang_smg_grpc_mode", False):
+    if args.sglang_grpc_mode or args.sglang_smg_grpc_mode:
         raise ValueError("Dynamo requires native gRPC alongside HTTP, not legacy gRPC mode")
-    if getattr(args, "sglang_sidecar", None) not in (None, "dynamo.sglang.sidecar"):
+    if args.sglang_sidecar not in (None, "dynamo.sglang.sidecar"):
         raise ValueError("--dynamo-config owns the SGLang sidecar provider")
     for name in ("sidecar_args", "grpc_port", "kv_events_config"):
-        if getattr(args, f"sglang_{name}", None):
+        if vars(args)[f"sglang_{name}"]:
             raise ValueError(f"Dynamo owns --sglang-{name.replace('_', '-')}; use dynamo-config for sidecar options")
     if use_legacy_rollout_v1():
         raise ValueError("Dynamo requires the standard InferenceRolloutFn lifecycle")
