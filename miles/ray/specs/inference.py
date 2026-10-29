@@ -4,6 +4,7 @@ from typing import Any, ClassVar
 
 from typing_extensions import Self
 
+from miles.backends.dynamo_utils import launch as dynamo_launch
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
 from miles.backends.sglang_utils.sglang_config import ModelConfig, ServerGroupConfig
 from miles.backends.sglang_utils.sglang_engine import compute_engine_launch_cmd
@@ -325,7 +326,15 @@ class InferenceEngineSpec(BaseCommandSpec):
         )
 
     def env_var(self, ctx: WorkerLaunchContext) -> dict[str, str]:
-        return compute_inference_engine_env_vars(ctx.args)
+        envs = compute_inference_engine_env_vars(ctx.args)
+        if (dynamo := ctx.args.dynamo_config) is not None:
+            envs = (
+                dynamo_launch.sidecar_env(
+                    dynamo, api_key=ctx.args.sglang.get_value("api_key", group=self.server_group_config)
+                )
+                | envs
+            )
+        return envs
 
     def launch_command(self, ctx: LaunchCommandContext) -> str:
         args = ctx.args
@@ -338,14 +347,18 @@ class InferenceEngineSpec(BaseCommandSpec):
         random_seed = (
             args.seed + group_scaling.engine_offset + ctx.cell_index * num_workers_per_cell + ctx.worker_in_cell_index
         )
-        return compute_engine_launch_cmd(
+        overrides = server_group_config.overrides
+        dynamo = args.dynamo_config
+        if dynamo is not None:
+            overrides = dynamo_launch.sidecar_overrides(dynamo, overrides=overrides, ctx=ctx)
+        command = compute_engine_launch_cmd(
             args=args,
             interpreter_prefix=interpreter_prefix,
             # TODO: make the indexing it k8s native compatible
             node_rank=ctx.worker_in_cell_index,
             worker_type=server_group_config.worker_type,
             base_gpu_id=ctx.local_gpu_ids[0],
-            sglang_overrides=server_group_config.overrides,
+            sglang_overrides=overrides,
             num_gpus_per_engine=server_group_config.num_gpus_per_engine,
             dist_init_addr=f"{dist_init.host}:{dist_init.port}",
             nccl_port=ctx.self_addrs["nccl"].port,
@@ -356,6 +369,7 @@ class InferenceEngineSpec(BaseCommandSpec):
             gated_launch_port=ctx.self_addrs[GATE_PORT_NAME].port,
             random_seed=random_seed,
         )
+        return dynamo_launch.sidecar_command(command, ctx=ctx) if dynamo is not None else command
 
 
 def _compute_inference_engine_scheduling(
@@ -424,6 +438,7 @@ def _compute_spec_inference_engine(
             ),
             PortInfo(name="engine_info_bootstrap", static_port=12000, mode="master", allow_dynamic=True),
             PortInfo(name=GATE_PORT_NAME, static_port=13000, mode="master", allow_dynamic=True),
+            *(dynamo_launch.sidecar_ports() if args.dynamo_config is not None else []),
         ],
         # TODO: reduce complexity around passing around configs later during arguments refactor
         partial_static_meta=StaticMeta(

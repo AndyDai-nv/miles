@@ -3,12 +3,16 @@ from types import SimpleNamespace
 import pytest
 from sglang.srt.arg_groups.serving_hook import handle_deprecated_args
 from tests.fast.backends.sglang_utils.conftest import make_engine_args
+from tests.fast.ray.rollout.conftest import make_args
 from miles.backends.dynamo_utils.config import DynamoConfig
 from miles.backends.dynamo_utils.launch import sidecar_env, sidecar_overrides
 from miles.backends.sglang_utils.server_args_utils import parse_server_args_argv
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
 from miles.backends.sglang_utils.sglang_engine import compute_engine_launch_cmd
-from miles.utils.workers.worker_spec import HostAndPort
+from miles.ray.specs.inference import InferenceEngineSpec
+from miles.utils.args.configs.scaling import ScalingConfig
+from miles.utils.workers.launch_gate import GATE_PORT_NAME
+from miles.utils.workers.worker_spec import HostAndPort, LaunchCommandContext
 
 
 @pytest.fixture
@@ -18,6 +22,44 @@ def config():
         discovery={"backend": "etcd", "endpoints": [{"host": "localhost", "port": 2379}]},
         pins={"dynamo": "a" * 40, "sglang": "b" * 40},
     )
+
+
+def test_miles_allocates_and_launches_sidecar_with_engine(config, monkeypatch):
+    captured = {}
+
+    def launch(**kwargs):
+        captured.update(kwargs)
+        return "python -m sglang.launch_server"
+
+    monkeypatch.setattr("miles.ray.specs.inference.compute_engine_launch_cmd", launch)
+    args = make_args(dynamo_config=config, sglang_api_key="test-key", rollout_num_gpus_per_engine=2)
+    scaling = ScalingConfig.model_validate({name: getattr(args, name) for name in ScalingConfig.model_fields})
+    spec = InferenceEngineSpec.create(args)[0]
+    ctx = LaunchCommandContext(
+        args=args,
+        scaling=scaling,
+        cell_index=0,
+        worker_in_cell_index=0,
+        num_workers_per_cell=1,
+        gpu_ids=[4, 5],
+        local_gpu_ids=[4, 5],
+        pool_addrs={},
+        self_addrs={
+            port.name: HostAndPort(host="127.0.0.1", port=20000 + index) for index, port in enumerate(spec.port_infos)
+        },
+    )
+    command = shlex.split(spec.launch_command(ctx))
+    assert command[0] == "env"
+    assert "sglang.launch_server" in command
+    overrides = captured["sglang_overrides"]
+    assert overrides["sidecar"] == "dynamo.sglang.sidecar"
+    assert overrides["grpc_port"] == ctx.self_addrs["dynamo_grpc"].port
+    assert overrides["incremental_streaming_output"] is True
+    assert "--controller-managed" in overrides["sidecar_args"]
+    assert captured["gated_launch_port"] == ctx.self_addrs[GATE_PORT_NAME].port
+    assert spec.env_var(ctx)["DYN_SGLANG_API_KEY"] == "test-key"
+    assert spec.category == "inference_engine"
+    assert spec.scheduling(scaling).pg_name == "rollout"
 
 
 def test_sidecar_does_not_accept_conflicting_admission_env(config):
