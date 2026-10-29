@@ -32,7 +32,7 @@ async def abort(state: GenerateState, pendings: set, rollout_id: int) -> list[li
     assert not state.aborted
     state.aborted = True
 
-    provider = getattr(state, "inference_controller_provider", None)
+    provider = state.inference_controller_provider
     if provider is not None:
         try:
             await provider.get_handle(inference_controller_worker_name()).abort_all()
