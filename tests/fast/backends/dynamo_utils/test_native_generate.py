@@ -1,11 +1,18 @@
 import asyncio
 import json
 from functools import partial
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
+
 import httpx
 import pytest
+from tests.fast.ray.rollout.conftest import make_args
+
 from miles.backends.dynamo_utils.generate import decode_response
+from miles.rollout.base_types import GenerateFnInput
+from miles.rollout.generate_hub.single_turn import generate
 from miles.utils.http_utils import _post
+from miles.utils.types import Sample
 
 
 def chunk(token, count, *, text="x", terminal=False):
@@ -107,6 +114,36 @@ async def test_timeout_also_covers_response_headers():
                 response_decoder=partial(decode_response, timeout_seconds=1),
                 response_timeout=0.01,
             )
+
+
+@pytest.mark.asyncio
+async def test_standard_generate_uses_stream_adapter_and_native_sample_mapping(monkeypatch):
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        body = chunk(10, 1, text="answer", terminal=True) + "data: [DONE]\n\n"
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=body)
+
+    args = make_args(
+        dynamo_config=SimpleNamespace(request_timeout_seconds=1),
+        sglang_api_key="local-key",
+        sglang_router_ip="frontend",
+        sglang_router_port=8000,
+    )
+    state = SimpleNamespace(args=args, processor=None, tokenizer=SimpleNamespace(encode=lambda *a, **k: [1]))
+    sample = Sample(prompt="question")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        monkeypatch.setattr("miles.utils.http_utils._rollout_client", lambda: client)
+        output = await generate(
+            GenerateFnInput(state=state, sample=sample, sampling_params={"max_new_tokens": 2}, evaluation=False)
+        )
+    assert output.samples is sample
+    assert sample.tokens == [1, 10]
+    assert sample.rollout_log_probs == [-0.5]
+    assert sample.status is Sample.Status.COMPLETED
+    assert json.loads(requests[0].content)["stream"] is True
+    assert requests[0].headers["Authorization"] == "Bearer local-key"
 
 
 @pytest.mark.asyncio

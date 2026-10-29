@@ -5,6 +5,8 @@ from collections.abc import Callable
 
 from tqdm import tqdm
 
+from miles.ray.specs.inference import inference_controller_worker_name
+
 from miles.rollout.base_types import RolloutFnTrainOutput, stamp_kv_cache_namespace
 from miles.rollout.filter_hub.base_types import MetricGatherer
 from miles.rollout.filter_hub.common_filters import apply_preput_filters
@@ -30,7 +32,15 @@ async def abort(state: GenerateState, pendings: set, rollout_id: int) -> list[li
     assert not state.aborted
     state.aborted = True
 
-    urls = await get_worker_urls(args)
+    provider = state.inference_controller_provider
+    if provider is not None:
+        try:
+            await provider.get_handle(inference_controller_worker_name()).abort_all()
+        except Exception as error:
+            logger.warning(f"Failed to abort all inference workers: {error}")
+        urls = []
+    else:
+        urls = await get_worker_urls(args)
     logger.info(f"Abort request for {urls}")
     results = await asyncio.gather(
         *[post(f"{url}/abort_request", {"abort_all": True}) for url in urls], return_exceptions=True

@@ -35,6 +35,7 @@ class GenerateState:
     def __init__(self, args: Namespace) -> None:
         # persistent state for the generation process
         self.args = args
+        self.inference_controller_provider = None
         self.tokenizer = load_tokenizer(
             args.hf_checkpoint, chat_template_path=args.chat_template_path, trust_remote_code=True
         )
@@ -225,6 +226,7 @@ class InferenceRolloutFn(BaseRolloutFn):
         super().__init__(input)
         self.data_source = input.data_source
         self.state = GenerateState(input.args)
+        self.state.inference_controller_provider = input.inference_controller_provider
         self.eval_prompt_dataset_cache = {}
 
     async def __call__(self, input: RolloutFnInput) -> RolloutFnOutput:
