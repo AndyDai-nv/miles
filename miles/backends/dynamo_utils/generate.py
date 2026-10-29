@@ -8,7 +8,7 @@ from miles.utils.http_utils import post
 
 
 async def post_generate(args, url: str, payload: dict, *, headers=None) -> dict:
-    config = getattr(args, "dynamo_config", None)
+    config = args.dynamo_config
     if config is None:
         return await post(url, payload, headers=headers)
     headers = dict(headers or {})
