@@ -12,7 +12,7 @@ from miles.backends.sglang_utils.sglang_config import ModelConfig
 from miles.router.config import compute_miles_router_config
 from miles.utils.http_utils import resolve_ip
 from miles.utils.workers.argv_utils import config_to_argv
-from miles.utils.workers.worker_spec import LaunchCommandContext
+from miles.utils.workers.worker_spec import LaunchCommandContext, WorkerLaunchContext
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,9 @@ class RouterBackend(ABC):
 
     def __init__(self, args: Namespace) -> None:
         self.args = args
+
+    def env_var(self, ctx: WorkerLaunchContext) -> dict[str, str]:
+        return {}
 
     def launch_argv(
         self, ctx: LaunchCommandContext, *, model_cfg: ModelConfig, interpreter_prefix: list[str]
