@@ -3,13 +3,13 @@ from pathlib import Path
 
 from miles.backends.dynamo_utils.config import load_dynamo_config
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
-from miles.backends.sglang_utils.sglang_config import resolve_sglang_config
+from miles.backends.sglang_utils.sglang_config import SglangConfig
 from miles.utils.environ import use_legacy_rollout_v1
 
 logger = logging.getLogger(__name__)
 
 
-def configure_dynamo(args) -> None:
+def configure_dynamo(args, *, sglang: SglangConfig) -> None:
     if not getattr(args, "dynamo_config", None):
         args.dynamo_config = None
         return
@@ -17,7 +17,7 @@ def configure_dynamo(args) -> None:
     logger.info("Required Dynamo/SGLang build revisions (not runtime-verified): %s", args.dynamo_config.pins)
     if args.use_miles_router or args.rollout_external:
         raise ValueError("--dynamo-config selects a Miles-managed router and SGLang engines")
-    config = resolve_sglang_config(args)
+    config = sglang
     if len(config.models) != 1 or any(
         group.worker_type != WorkerType.REGULAR for model in config.models for group in model.server_groups
     ):
