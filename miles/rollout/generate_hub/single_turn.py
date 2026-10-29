@@ -48,7 +48,7 @@ async def generate(input: GenerateFnInput, url: str | None = None) -> GenerateFn
         return GenerateFnOutput(samples=sample)
 
     headers = compute_routing_headers(args, sample)
-    if getattr(args, "dynamo_config", None) is not None:
+    if args.dynamo_config is not None:
         output = await post_generate(args, url, payload, headers=headers)
     else:
         output = await post(url, payload, headers=headers)
