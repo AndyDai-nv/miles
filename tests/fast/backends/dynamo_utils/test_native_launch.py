@@ -4,7 +4,7 @@ import pytest
 from sglang.srt.arg_groups.serving_hook import handle_deprecated_args
 from tests.fast.backends.sglang_utils.conftest import make_engine_args
 from miles.backends.dynamo_utils.config import DynamoConfig
-from miles.backends.dynamo_utils.launch import sidecar_overrides
+from miles.backends.dynamo_utils.launch import sidecar_env, sidecar_overrides
 from miles.backends.sglang_utils.server_args_utils import parse_server_args_argv
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
 from miles.backends.sglang_utils.sglang_engine import compute_engine_launch_cmd
@@ -18,6 +18,14 @@ def config():
         discovery={"backend": "etcd", "endpoints": [{"host": "localhost", "port": 2379}]},
         pins={"dynamo": "a" * 40, "sglang": "b" * 40},
     )
+
+
+def test_sidecar_does_not_accept_conflicting_admission_env(config):
+    config = config.model_copy(
+        update={"sidecar": config.sidecar.model_copy(update={"env": {"DYN_SGLANG_CONTROLLER_MANAGED": "false"}})}
+    )
+    with pytest.raises(ValueError, match="CONTROLLER_MANAGED"):
+        sidecar_env(config, api_key=None)
 
 
 @pytest.mark.parametrize("api_key", [None, "test-key"])
