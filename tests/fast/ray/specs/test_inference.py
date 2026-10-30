@@ -174,6 +174,16 @@ class TestRouterPortPinning:
 
 
 class TestComputeSpecRouterLaunchCommand:
+    @pytest.mark.parametrize("use_miles_router", [False, True])
+    def test_existing_router_backends_have_no_worker_environment(self, use_miles_router):
+        args = make_args(use_miles_router=use_miles_router)
+        spec = _compute_spec_router(args, model_idx=0, model_cfg=_make_model_cfg("regular"))
+        context = WorkerLaunchContext(
+            args=args, cell_index=0, worker_in_cell_index=0, num_workers_per_cell=1, gpu_ids=[]
+        )
+
+        assert spec.env_var(context) == {}
+
     def test_backend_environment_is_available_before_listener_allocation(self, monkeypatch):
         args = make_args()
         spec = _compute_spec_router(args, model_idx=0, model_cfg=_make_model_cfg("regular"))
