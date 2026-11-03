@@ -1,6 +1,6 @@
 # Miles-managed Dynamo sidecar
 
-Draft integration with unmerged SGLang and Dynamo dependencies.
+Integration with unmerged SGLang and Dynamo dependencies.
 
 Build SGLang from `AndyDai-nv/sglang` at the revision in `dynamo.json`:
 **sglang-miles** plus [native gRPC authentication](https://github.com/sgl-project/sglang/pull/45208).
@@ -33,7 +33,9 @@ Run sequentially on the same eight GPUs with identical checkpoints, data and
 seed. Miles allocates four training GPUs and two TP2 engines, starts the frontend,
 and launches each sidecar via SGLang `--sidecar dynamo.sglang.sidecar`.
 No external engine list, standalone sidecar process or special rollout function
-is needed. Add `--extra-args '--use-fault-tolerance'` for a separate recovery run.
+is needed. Direct training launches select `--router dynamo --dynamo-config ...`;
+the comparison launcher selects the router automatically.
+Add `--extra-args '--use-fault-tolerance'` for a separate recovery run.
 Compare end-to-end wall-clock timing and per-rollout rewards. Record startup
 separately, along with exact revisions and runtime settings.
 

@@ -31,6 +31,7 @@ async def test_comparison_starts_fresh_from_converted_weights(monkeypatch, tmp_p
     assert argv[argv.index("--rollout-num-gpus") + 1] == "4"
     assert argv[argv.index("--rollout-num-gpus-per-engine") + 1] == "2"
     assert ("--dynamo-config" in argv) == (router == "dynamo")
+    assert argv[argv.index("--router") + 1] == ("dynamo" if router == "dynamo" else "sglang")
     assert ("--sglang-router-policy" in argv) == (router == "cache_aware")
     assert argv[argv.index("--rollout-max-response-len") + 1] == "4096"
     assert argv[argv.index("--max-tokens-per-gpu") + 1] == "8192"

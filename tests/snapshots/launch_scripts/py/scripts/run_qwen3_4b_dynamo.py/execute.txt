@@ -38,6 +38,7 @@ export no_proxy=127.0.0.1 && export PYTHONUNBUFFERED=1 && ray job submit
   --finetune
   --no-load-optim
   --no-load-rng
+  --router dynamo
   --dynamo-config examples/dynamo_sidecar/dynamo.json
   --prompt-data /root/datasets/dapo-math-17k/dapo-math-17k.jsonl
   --input-key prompt

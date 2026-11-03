@@ -48,9 +48,9 @@ def execute(args: ScriptArgs):
     )
     rollout = (
         (
-            f"--dynamo-config {shlex.quote(args.dynamo_config)} "
+            f"--router dynamo --dynamo-config {shlex.quote(args.dynamo_config)} "
             if args.router == "dynamo"
-            else "--sglang-router-policy cache_aware "
+            else "--router sglang --sglang-router-policy cache_aware "
         )
         + f"--prompt-data {shlex.quote(args.data_dir + '/dapo-math-17k/dapo-math-17k.jsonl')} "
         "--input-key prompt --label-key label --apply-chat-template --rollout-shuffle "
