@@ -3,12 +3,11 @@ import dataclasses
 import logging
 from typing import Any
 
-from miles.backends.dynamo_utils.serving_registry import DynamoServingRegistry
-
+from miles.backends.dynamo_utils.serving_registry import DynamoServingRegistryFactory
 from miles.backends.sglang_utils.sglang_api_client import SGLangApiClient
 from miles.backends.sglang_utils.sglang_router_api_client import SGLangRouterApiClient
 from miles.ray.rollout.server_cell import ServerCell, ServerCellMetadata
-from miles.ray.rollout.serving_registry import ServingRegistry
+from miles.ray.rollout.serving_registry import ServingRegistryFactory, SGLangServingRegistry
 from miles.utils import async_utils
 from miles.utils.context_lock import ContextLock, enforce_lock_discipline, lock_exempt, requires_lock
 from miles.utils.ft_utils.health_checker import ActivenessTracker
@@ -40,12 +39,20 @@ async def create_rollout_servers(
 
     for model_cfg in config.models:
         router_addr = router_addrs[model_cfg.name]
+        registry: ServingRegistryFactory
+        if args.dynamo_config is not None:
+            registry = DynamoServingRegistryFactory(
+                provider=engine_provider, timeout_seconds=args.dynamo_config.control_timeout_seconds
+            )
+        else:
+            registry = SGLangServingRegistry(client=SGLangRouterApiClient(router_url=router_addr.addr))
 
         servers[model_cfg.name] = RolloutServer(
             all_server_cells={},
             args=args,
             context_lock=context_lock,
             engine_provider=engine_provider,
+            serving_registry=registry,
             router_ip=router_addr.host,
             router_port=router_addr.port,
             model_name=model_cfg.name,
@@ -79,6 +86,7 @@ class RolloutServer:
     args: Any
     context_lock: ContextLock
     engine_provider: BaseWorkerProvider
+    serving_registry: ServingRegistryFactory
     router_ip: str | None = None
     router_port: int | None = None
     model_name: str = "default"
@@ -87,7 +95,6 @@ class RolloutServer:
         default_factory=lambda: ActivenessTracker(active=True)
     )
     init_expected_num_cells: int = 0
-    serving_registry: ServingRegistry | None = None
 
     @property
     @requires_lock
@@ -124,21 +131,14 @@ class RolloutServer:
     async def add_cell(self, cell_meta: ServerCellMetadata):
         cell_id = cell_meta.cell_id
         assert cell_id not in self.all_server_cells
-        registry = self.serving_registry
-        if (config := self.args.dynamo_config) is not None:
-            registry = DynamoServingRegistry(
-                provider=self.engine_provider,
-                worker_name=cell_meta.worker_name,
-                api_key=cell_meta.sglang_api_key,
-                timeout_seconds=config.control_timeout_seconds,
-            )
         cell = ServerCell(
             args=self.args,
-            router_api_client=self._router_api_client,
             meta=cell_meta,
             provider=self.engine_provider,
             health_checker_activeness=self.health_checker_activeness.get,
-            serving_registry=registry,
+            serving_registry=self.serving_registry.for_worker(
+                worker_name=cell_meta.worker_name, api_key=cell_meta.sglang_api_key
+            ),
         )
         self.all_server_cells[cell_id] = cell
         if not (self.args.colocate and cell_meta.needs_offload):
@@ -247,8 +247,3 @@ class RolloutServer:
             if not cell.is_errored
             and ((self.args.colocate and cell.meta.needs_offload) or cell.is_pending_weights_or_serving)
         )
-
-    @property
-    @requires_lock
-    def _router_api_client(self) -> SGLangRouterApiClient:
-        return SGLangRouterApiClient(router_url=f"http://{self.router_ip}:{self.router_port}")

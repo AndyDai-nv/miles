@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.fast.ray.rollout.conftest import make_serving_registry
 
 from miles.ray.rollout.inference_controller import InferenceController
 from miles.ray.rollout.rollout_executor import RolloutExecutor
@@ -555,6 +556,7 @@ class TestEveryCellOfAServerIsAborted:
     @staticmethod
     def _server(cells: list[_AbortingCell]) -> RolloutServer:
         return RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={cell.meta.cell_id: cell for cell in cells},
             args=SimpleNamespace(colocate=True),
             context_lock=ContextLock("InferenceController"),
@@ -596,6 +598,7 @@ class TestEveryServerOfTheFleetIsAborted:
         controller.context_lock = context_lock
         controller.servers = {
             model_name: RolloutServer(
+                serving_registry=make_serving_registry(),
                 all_server_cells={cell.meta.cell_id: cell},
                 args=SimpleNamespace(colocate=True),
                 context_lock=context_lock,

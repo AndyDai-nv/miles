@@ -19,9 +19,16 @@ class ServingRegistry(Protocol):
     async def check_health(self, *, worker_url: str, serving: bool) -> None: ...
 
 
+class ServingRegistryFactory(Protocol):
+    def for_worker(self, *, worker_name: str, api_key: str | None) -> ServingRegistry: ...
+
+
 @dataclass(frozen=True)
 class SGLangServingRegistry:
     client: "SGLangRouterApiClient"
+
+    def for_worker(self, *, worker_name: str, api_key: str | None) -> "SGLangServingRegistry":
+        return self
 
     async def register(self, *, worker_url: str, worker_type: WorkerType, bootstrap_port: int | None) -> None:
         await self.client.add_worker(
