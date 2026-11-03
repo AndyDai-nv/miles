@@ -38,7 +38,7 @@ def test_miles_allocates_and_launches_sidecar_with_engine(config, monkeypatch):
         return "python -m sglang.launch_server"
 
     monkeypatch.setattr("miles.ray.specs.inference.compute_engine_launch_cmd", launch)
-    args = make_args(dynamo_config=config, sglang_api_key="test-key", rollout_num_gpus_per_engine=2)
+    args = make_args(router="dynamo", dynamo_config=config, sglang_api_key="test-key", rollout_num_gpus_per_engine=2)
     scaling = ScalingConfig.model_validate({name: getattr(args, name) for name in ScalingConfig.model_fields})
     spec = InferenceEngineSpec.create(args)[0]
     ctx = LaunchCommandContext(
@@ -122,7 +122,7 @@ def test_frontend_uses_shared_router_spec_and_preallocation_environment(config, 
             )
         }
     )
-    args = make_args(dynamo_config=config)
+    args = make_args(router="dynamo", dynamo_config=config)
     spec = RouterSpec.create(args)[0]
     scaling = ScalingConfig.model_validate({name: getattr(args, name) for name in ScalingConfig.model_fields})
     env_context = WorkerLaunchContext(
@@ -132,6 +132,8 @@ def test_frontend_uses_shared_router_spec_and_preallocation_environment(config, 
     env = spec.env_var(env_context)
 
     assert isinstance(make_router_backend(args), DynamoRouterBackend)
+    assert make_router_backend(args).routing_headers("sample-key", args.sglang.models) == {}
+    assert make_router_backend(args).routing_headers(None, []) == {}
     assert spec.name == "inference-router-0"
     assert spec.scheduling(scaling).num_gpus_per_worker == 0
     assert env["NATS_SERVER"] == config.nats_server
@@ -161,7 +163,7 @@ def test_frontend_uses_shared_router_spec_and_preallocation_environment(config, 
 
 def test_frontend_rejects_explicit_environment_conflicts(config):
     config = config.model_copy(update={"env": {"NATS_SERVER": "nats://other-run:4222"}})
-    args = make_args(dynamo_config=config)
+    args = make_args(router="dynamo", dynamo_config=config)
     spec = RouterSpec.create(args)[0]
     context = WorkerLaunchContext(args=args, cell_index=0, worker_in_cell_index=0, num_workers_per_cell=1, gpu_ids=[])
 
@@ -170,7 +172,7 @@ def test_frontend_rejects_explicit_environment_conflicts(config):
 
 
 def test_frontend_rejects_pd_disaggregation(config):
-    args = make_args(dynamo_config=config, rollout_external_router_pd=True)
+    args = make_args(router="dynamo", dynamo_config=config, rollout_external_router_pd=True)
     backend = make_router_backend(args)
 
     with pytest.raises(AssertionError, match="dynamo router does not support PD disaggregation"):
@@ -178,7 +180,7 @@ def test_frontend_rejects_pd_disaggregation(config):
 
 
 def test_frontend_command_and_environment_render_through_shared_helm_path(config):
-    args = make_args(dynamo_config=config, sglang_router_port=31000)
+    args = make_args(router="dynamo", dynamo_config=config, sglang_router_port=31000)
     specs = RouterSpec.create(args)
     scaling = ScalingConfig.model_validate({name: getattr(args, name) for name in ScalingConfig.model_fields})
     plan = LaunchPlan(
