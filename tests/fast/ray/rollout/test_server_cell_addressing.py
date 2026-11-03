@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from tests.fast.ray.rollout.conftest import make_args, track_server_cell
+from tests.fast.ray.rollout.conftest import make_args, make_serving_registry, track_server_cell
 
 from miles.ray.rollout.server_cell import ServerCell, ServerCellMetadata, compute_nodes_per_engine
 from miles.utils.workers.worker_spec import HostAndPort
@@ -47,7 +47,12 @@ def stub_provider():
 
 def _make_cell(provider: _StubProvider, **meta_overrides) -> ServerCell:
     return track_server_cell(
-        ServerCell(args=make_args(), meta=_make_meta(**meta_overrides), router_api_client=None, provider=provider)
+        ServerCell(
+            args=make_args(),
+            meta=_make_meta(**meta_overrides),
+            serving_registry=make_serving_registry(),
+            provider=provider,
+        )
     )
 
 

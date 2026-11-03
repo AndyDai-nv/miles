@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 from tests.fast.fixtures.sglang_config_fixtures import resolve_sglang_config, resolve_sglang_config_and_scaling
-from tests.fast.ray.rollout.conftest import make_args
+from tests.fast.ray.rollout.conftest import make_args, make_serving_registry
 
 from miles.backends.sglang_utils.sglang_config import _compute_megatron_num_gpus, _compute_rollout_offset
 from miles.ray.rollout.cell_state import CellAddrInfo, StateServing
@@ -266,6 +266,7 @@ class TestEngineListOrdering:
                 meta=meta, api_client=f"client-{index}", is_errored=False
             )
         return RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells=cells,
             args=SimpleNamespace(),
             context_lock=_make_lock(),
@@ -304,6 +305,7 @@ class TestAddCellRollback:
     async def test_disposing_the_server_removes_every_cell_it_tracks(self, monkeypatch):
         """Controller teardown must reach each cell so its health checker task stops with it."""
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=True, ft_components=[]),
             context_lock=_make_lock(),
@@ -326,6 +328,7 @@ class TestAddCellRollback:
             disposed.append(cell)
 
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=False, ft_components=[]),
             context_lock=_make_lock(),
@@ -351,6 +354,7 @@ class TestAddCellRollback:
             raise RuntimeError("injected init failure")
 
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=False, ft_components=["rollout"]),
             context_lock=_make_lock(),
@@ -370,6 +374,7 @@ class TestAddCellRollback:
     async def test_a_failed_add_leaves_the_cells_already_tracked_alone(self, monkeypatch):
         """Only the cell that failed may be dropped, or a single bad engine unmanages the healthy ones too."""
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=False, ft_components=[]),
             context_lock=_make_lock(),
@@ -397,6 +402,7 @@ class TestAddCellRollback:
             raise RuntimeError("injected dispose failure")
 
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=False, ft_components=[]),
             context_lock=_make_lock(),
@@ -415,6 +421,7 @@ class TestAddCellRollback:
     async def test_a_dropped_cell_id_can_be_added_again(self, monkeypatch):
         """Retrying is the whole point: the next observation of the same cell must be able to build it again."""
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=False, ft_components=[]),
             context_lock=_make_lock(),
@@ -437,6 +444,7 @@ class TestAddCellRollback:
     async def test_a_successful_add_commits_the_cell(self, monkeypatch):
         """After the failure is gone the same cell id can be added normally."""
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=False, ft_components=[]),
             context_lock=_make_lock(),
@@ -456,6 +464,7 @@ class TestDuplicateCellId:
     async def test_adding_a_duplicate_cell_id_preserves_the_original_cell(self, monkeypatch):
         """Overwriting the entry would drop the first cell's health checker task and router registration on the floor."""
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=True, ft_components=[]),
             context_lock=_make_lock(),
@@ -488,6 +497,7 @@ class TestRemoveCellDisposal:
             await real_dispose(cell)
 
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=True, ft_components=[]),
             context_lock=_make_lock(),
@@ -520,6 +530,7 @@ class TestAddCellInitTiming:
             initialized.append(self.meta.cell_id)
 
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=False, ft_components=[]),
             context_lock=_make_lock(),
@@ -542,6 +553,7 @@ class TestAddCellInitTiming:
             initialized.append(self.meta.cell_id)
 
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=True, ft_components=[]),
             context_lock=_make_lock(),
@@ -565,6 +577,7 @@ class TestAddCellInitTiming:
             initialized.append(self.meta.cell_id)
 
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=True, ft_components=[]),
             context_lock=_make_lock(),
@@ -601,6 +614,7 @@ class TestDeferredInitMatchesTheStartupBarrier:
             initialized.append(self.meta.cell_id)
 
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=colocate, ft_components=[]),
             context_lock=_make_lock(),
@@ -619,11 +633,11 @@ class TestDeferredInitMatchesTheStartupBarrier:
 async def _make_serving_server(monkeypatch, *, num_cells: int) -> RolloutServer:
     """A server whose cells are all registered and serving, without dialling anything."""
     router = _RecordingRouterApiClient()
-    monkeypatch.setattr(RolloutServer, "_router_api_client", property(lambda self: router))
 
     srv = RolloutServer(
+        serving_registry=make_serving_registry(router),
         all_server_cells={},
-        args=make_args(colocate=True, ft_components=[], use_miles_router=False),
+        args=make_args(colocate=True, ft_components=[], router="sglang"),
         context_lock=_make_lock(),
         engine_provider=_StubProvider(),
     )
@@ -694,6 +708,7 @@ def _fake_cell(*, cell_id: str, gpu_offset: int, errored: bool = False, serving:
 
 def _server_of(cells: dict[str, SimpleNamespace]) -> RolloutServer:
     return RolloutServer(
+        serving_registry=make_serving_registry(),
         all_server_cells=cells,
         args=SimpleNamespace(colocate=False),
         context_lock=_make_lock(),

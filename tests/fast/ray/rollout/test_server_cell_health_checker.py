@@ -7,7 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from tests.fast.ray.rollout.conftest import make_args, track_server_cell
+from tests.fast.ray.rollout.conftest import make_args, make_serving_registry, track_server_cell
 
 from miles.ray.rollout import server_cell as server_cell_module
 from miles.ray.rollout.cell_state import (
@@ -65,7 +65,7 @@ def _make_cell(*, ft_components: list[str], global_activeness: bool = True, **ar
         ServerCell(
             args=make_args(ft_components=ft_components, **arg_overrides),
             meta=_make_meta(),
-            router_api_client=MagicMock(remove_worker=AsyncMock()),
+            serving_registry=make_serving_registry(MagicMock(remove_worker=AsyncMock())),
             provider=_StubProvider(),
             health_checker_activeness=lambda: ActiveAndEpoch(active=global_activeness, epoch=0),
         )
@@ -289,7 +289,7 @@ class TestRolloutCellHealthCheckerAfterAnError:
         """A cell taken out of service is never healed back, so its probe loop would poll a dead engine forever."""
         monkeypatch.setattr(server_cell_module, "SGLangApiClient", _NoopEngineApiClient)
         cell = _make_cell(ft_components=["rollout"])
-        cell.router_api_client = _NoopRouterApiClient()
+        cell.serving_registry = make_serving_registry(_NoopRouterApiClient())
         cell._state = StateServing(addr_info=_addr_info())
         assert cell._health_checker._task is not None
 
@@ -301,7 +301,7 @@ class TestRolloutCellHealthCheckerAfterAnError:
         """The global activeness flips back on after every weight update, and must not revive this cell."""
         monkeypatch.setattr(server_cell_module, "SGLangApiClient", _NoopEngineApiClient)
         cell = _make_cell(ft_components=["rollout"], global_activeness=True)
-        cell.router_api_client = _NoopRouterApiClient()
+        cell.serving_registry = make_serving_registry(_NoopRouterApiClient())
         cell._state = StateServing(addr_info=_addr_info())
 
         await cell.mark_errored()
@@ -344,6 +344,7 @@ async def _make_controller_with_serving_cell(
     controller.context_lock = ContextLock("InferenceController")
 
     srv = RolloutServer(
+        serving_registry=make_serving_registry(),
         all_server_cells={},
         args=args,
         context_lock=controller.context_lock,
@@ -355,7 +356,7 @@ async def _make_controller_with_serving_cell(
         await srv.add_cell(_make_meta(needs_offload=True))
 
     cell: ServerCell = track_server_cell(srv.all_server_cells["inference-engine-0-0-0"])
-    cell.router_api_client = _NoopRouterApiClient()
+    cell.serving_registry = make_serving_registry(_NoopRouterApiClient())
     cell._state = StateServing(addr_info=_addr_info())
     return controller, cell
 

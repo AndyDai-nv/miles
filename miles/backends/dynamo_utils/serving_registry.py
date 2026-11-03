@@ -9,6 +9,17 @@ from miles.utils.http_utils import GeneralHttpClientProvider
 from miles.utils.workers.worker_provider.base import BaseWorkerProvider
 
 
+@dataclass(frozen=True)
+class DynamoServingRegistryFactory:
+    provider: BaseWorkerProvider
+    timeout_seconds: float
+
+    def for_worker(self, *, worker_name: str, api_key: str | None) -> "DynamoServingRegistry":
+        return DynamoServingRegistry(
+            provider=self.provider, worker_name=worker_name, api_key=api_key, timeout_seconds=self.timeout_seconds
+        )
+
+
 @dataclass
 class DynamoServingRegistry:
     provider: BaseWorkerProvider

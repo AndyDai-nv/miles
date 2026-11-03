@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 from sglang.srt.constants import GPU_MEMORY_TYPE_CUDA_GRAPH, GPU_MEMORY_TYPE_KV_CACHE, GPU_MEMORY_TYPE_WEIGHTS
-from tests.fast.ray.rollout.conftest import make_args
+from tests.fast.ray.rollout.conftest import make_args, make_serving_registry
 
 from miles.dashboard import hooks as dashboard_hooks
 from miles.ray.rollout import inference_controller as inference_controller_module
@@ -566,6 +566,7 @@ class TestReconcileAfterAFailedInit:
 
         controller = _make_controller({})
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=False, ft_components=[]),
             context_lock=controller.context_lock,
@@ -591,6 +592,7 @@ class TestReconcileAfterAFailedInit:
         """A dropped cell must vanish from the status surface, otherwise the dashboard shows an engine nobody owns."""
         controller = _make_controller({})
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=False, ft_components=[]),
             context_lock=controller.context_lock,
@@ -866,6 +868,7 @@ class TestServersShareTheControllerLock:
         """The controller lock is the very lock its servers require, so reconcile works end to end."""
         controller = _make_controller({})
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=SimpleNamespace(),
             context_lock=controller.context_lock,
@@ -882,6 +885,7 @@ class TestServersShareTheControllerLock:
         """A server wired up with its own lock instead of the controller's is a wiring bug."""
         controller = _make_controller({})
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=SimpleNamespace(),
             context_lock=ContextLock("InferenceController"),
