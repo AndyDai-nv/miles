@@ -53,14 +53,38 @@ def test_dynamo_router_requires_configuration(configured_args):
         ("rollout_external", True),
         ("router", "miles"),
         ("router", "sglang"),
-        ("sglang_dp_size", 2),
         ("eval_uses_snapshots", True),
         ("sglang_grpc_port", 1234),
         ("sglang_sidecar_args", ["--namespace", "wrong"]),
-        ("sglang_router_policy", "manual"),
+        ("sglang_kv_events_config", "{}"),
     ],
 )
 def test_incompatible_options_fail_at_startup(configured_args, name, value):
     setattr(configured_args, name, value)
     with pytest.raises(ValueError):
         validate_dynamo_args(configured_args, sglang=configured_args.sglang)
+
+
+@pytest.mark.parametrize("policy", ["manual", "consistent_hashing", "cache_aware", "round_robin", "random", ""])
+def test_sglang_router_policies_point_to_dynamo_configuration(configured_args, policy):
+    configured_args.sglang_router_policy = policy
+    with pytest.raises(ValueError, match="frontend.router_mode"):
+        validate_dynamo_args(configured_args, sglang=configured_args.sglang)
+
+
+@pytest.mark.parametrize(
+    "base_dp,override_dp,accepted", [(1, None, True), (2, None, False), (1, 2, False), (2, 1, True)]
+)
+def test_dp_validation_uses_resolved_per_engine_value(configured_args, base_dp, override_dp, accepted):
+    args = make_args(router="dynamo", dynamo_config=configured_args.dynamo_config, sglang_dp_size=base_dp)
+    model = args.sglang.models[0]
+    group = model.server_groups[0]
+    overrides = group.overrides | ({"dp_size": override_dp} if override_dp is not None else {})
+    model = model.model_copy(update={"server_groups": [group.model_copy(update={"overrides": overrides})]})
+    sglang = args.sglang.model_copy(update={"models": [model]})
+    if accepted:
+        validate_dynamo_args(args, sglang=sglang)
+        assert isinstance(args.dynamo_config, DynamoConfig)
+    else:
+        with pytest.raises(ValueError, match="per-engine dp_size=1"):
+            validate_dynamo_args(args, sglang=sglang)
