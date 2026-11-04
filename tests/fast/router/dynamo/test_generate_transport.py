@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from miles.backends.dynamo_utils.generate_transport import GenerateProtocolError, _generate_events
+from miles.router.dynamo.api_client import GenerateProtocolError, _generate_events
 
 pytestmark = pytest.mark.asyncio
 
