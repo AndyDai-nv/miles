@@ -32,7 +32,10 @@ def config():
     )
 
 
-def test_miles_allocates_and_launches_sidecar_with_engine(config, monkeypatch):
+@pytest.mark.parametrize("nats_server", [None, "nats://nats:4222"])
+def test_miles_allocates_and_launches_sidecar_with_engine(config, monkeypatch, nats_server):
+    config = config.model_copy(update={"nats_server": nats_server})
+    monkeypatch.setenv("NATS_SERVER", "nats://other-run:4222")
     captured = {}
 
     def launch(**kwargs):
@@ -66,6 +69,10 @@ def test_miles_allocates_and_launches_sidecar_with_engine(config, monkeypatch):
     assert "--controller-managed" in overrides["sidecar_args"]
     assert captured["gated_launch_port"] == ctx.self_addrs[GATE_PORT_NAME].port
     assert spec.env_var(ctx)["DYN_SGLANG_API_KEY"] == "test-key"
+    if nats_server is None:
+        assert "NATS_SERVER" not in spec.env_var(ctx)
+    else:
+        assert spec.env_var(ctx)["NATS_SERVER"] == nats_server
     assert spec.category == "inference_engine"
     assert spec.scheduling(scaling).pg_name == "rollout"
 
@@ -115,13 +122,15 @@ def test_native_sidecar_arguments_and_upstream_auth_validation(config, api_key):
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "[::1]", "0.0.0.0"])
-def test_frontend_uses_shared_router_spec_and_preallocation_environment(config, monkeypatch, host):
+@pytest.mark.parametrize("nats_server", [None, "nats://nats:4222"])
+def test_frontend_uses_shared_router_spec_and_preallocation_environment(config, monkeypatch, host, nats_server):
     monkeypatch.setenv("NATS_SERVER", "nats://other-run:4222")
     config = config.model_copy(
         update={
+            "nats_server": nats_server,
             "frontend": config.frontend.model_copy(
                 update={"router_mode": "kv", "extra_args": ("--log-level", "debug")}
-            )
+            ),
         }
     )
     args = make_args(router="dynamo", dynamo_config=config)
@@ -138,7 +147,10 @@ def test_frontend_uses_shared_router_spec_and_preallocation_environment(config, 
     assert make_router_backend(args).routing_headers(None, []) == {}
     assert spec.name == "inference-router-0"
     assert spec.scheduling(scaling).num_gpus_per_worker == 0
-    assert env["NATS_SERVER"] == config.nats_server
+    if nats_server is None:
+        assert "NATS_SERVER" not in env
+    else:
+        assert env["NATS_SERVER"] == nats_server
     assert env["DYN_NAMESPACE"] == config.namespace
     assert env["DYN_ROUTER_MIN_INITIAL_WORKERS"] == "0"
     assert env["DYN_SGLANG_ENABLE_GENERATE"] == "1"
@@ -205,5 +217,5 @@ def test_frontend_command_and_environment_render_through_shared_helm_path(config
     assert entry.command[entry.command.index("-m") + 1] == "dynamo.frontend"
     assert entry.command[entry.command.index("--http-host") + 1] == "0.0.0.0"
     assert entry.command[entry.command.index("--http-port") + 1] == "31000"
-    assert entry.env["NATS_SERVER"] == config.nats_server
+    assert "NATS_SERVER" not in entry.env
     assert entry.env["DYN_NAMESPACE"] == config.namespace
