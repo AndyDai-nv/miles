@@ -1,15 +1,17 @@
 import shlex
 from types import SimpleNamespace
+
 import pytest
 from sglang.srt.arg_groups.serving_hook import handle_deprecated_args
 from tests.fast.backends.sglang_utils.conftest import make_engine_args
 from tests.fast.ray.rollout.conftest import make_args
-from miles.backends.dynamo_utils.config import DynamoConfig
-from miles.backends.dynamo_utils.launch import sidecar_env, sidecar_overrides
+
 from miles.backends.sglang_utils.server_args_utils import parse_server_args_argv
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
 from miles.backends.sglang_utils.sglang_engine import compute_engine_launch_cmd
 from miles.ray.specs.inference import InferenceEngineSpec
+from miles.router.dynamo.config import DynamoConfig
+from miles.router.dynamo.sidecar import sidecar_env, sidecar_overrides
 from miles.utils.args.configs.scaling import ScalingConfig
 from miles.utils.workers.launch_gate import GATE_PORT_NAME
 from miles.utils.workers.worker_spec import HostAndPort, LaunchCommandContext
