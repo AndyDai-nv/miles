@@ -18,6 +18,7 @@ from miles.rollout.generate_utils.tool_call_utils import (
     execute_tool_calls,
     update_sample_with_tool_responses,
 )
+from miles.router.dynamo.api_client import post_generate
 from miles.utils.function_registry import load_function
 from miles.utils.http_utils import post
 from miles.utils.lifecycle import TrajectoryLifecycle
@@ -63,7 +64,11 @@ async def generate(input: GenerateFnInput) -> GenerateFnOutput:
             break
 
         gen_t0 = time.time()
-        output = await post(url, payload, headers=compute_routing_headers(args, sample))
+        headers = compute_routing_headers(args, sample)
+        if args.dynamo_config is not None:
+            output = await post_generate(args, url, payload, headers=headers)
+        else:
+            output = await post(url, payload, headers=headers)
         sink = None if input.evaluation else TrajectoryLifecycle().sink
         if sink is not None:
             tokens = output.get("meta_info", {}).get("completion_tokens", "")

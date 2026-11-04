@@ -19,7 +19,7 @@ class TestAbort:
             sglang_router_ip="router",
             sglang_router_port=30000,
         )
-        state = SimpleNamespace(args=args, aborted=False)
+        state = SimpleNamespace(args=args, aborted=False, inference_controller_provider=None)
         sample = SimpleNamespace(response="partial", metadata={})
         hook_calls: list[Namespace] = []
         posted_urls: list[str] = []

@@ -12,6 +12,7 @@ from miles.utils.types import Sample
 
 if TYPE_CHECKING:
     from miles.rollout.inference_rollout.inference_rollout_common import GenerateState
+    from miles.utils.workers.worker_provider.base import BaseWorkerProvider
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class RolloutFnConstructorInput:
     args: Namespace
     # TODO may refactor DataSource API
     data_source: DataSource
+    inference_controller_provider: BaseWorkerProvider | None = None
 
 
 @dataclass(frozen=True)
