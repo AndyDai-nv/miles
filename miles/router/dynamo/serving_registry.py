@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 import httpx
 
-from miles.backends.dynamo_utils.config import Address
 from miles.backends.sglang_utils.sglang_api_client import SGLangApiClient, WorkerType
+from miles.router.dynamo.config import Address
 from miles.utils.http_utils import GeneralHttpClientProvider
 from miles.utils.workers.worker_provider.base import BaseWorkerProvider
 

@@ -3,13 +3,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from tests.fast.ray.rollout.conftest import make_args, track_server_cell
 
-from miles.backends.dynamo_utils.config import DynamoConfig
-from miles.backends.dynamo_utils.serving_registry import DynamoServingRegistry, DynamoServingRegistryFactory
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
 from miles.ray.rollout.cell_state import CellAddrInfo, StateDisposed, StatePendingWeights, StateServing
 from miles.ray.rollout.rollout_server import create_rollout_servers
 from miles.ray.rollout.server_cell import ServerCell, ServerCellMetadata
 from miles.ray.rollout.serving_registry import SGLangServingRegistry
+from miles.router.dynamo.config import DynamoConfig
+from miles.router.dynamo.serving_registry import DynamoServingRegistry, DynamoServingRegistryFactory
 from miles.utils.context_lock import ContextLock
 from miles.utils.workers.worker_spec import HostAndPort
 
