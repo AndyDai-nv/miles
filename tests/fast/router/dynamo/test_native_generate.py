@@ -4,7 +4,7 @@ from functools import partial
 from unittest.mock import AsyncMock
 import httpx
 import pytest
-from miles.backends.dynamo_utils.generate import decode_response
+from miles.router.dynamo.api_client import decode_response
 from miles.utils.http_utils import _post
 
 
