@@ -8,9 +8,9 @@ import httpx
 import pytest
 from tests.fast.ray.rollout.conftest import make_args
 
-from miles.backends.dynamo_utils.generate import decode_response
 from miles.rollout.base_types import GenerateFnInput
 from miles.rollout.generate_hub.single_turn import generate
+from miles.router.dynamo.api_client import decode_response
 from miles.utils.http_utils import _post
 from miles.utils.types import Sample
 
