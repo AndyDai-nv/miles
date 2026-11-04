@@ -9,14 +9,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
-from miles.backends.dynamo_utils.config import Address
-from miles.backends.dynamo_utils.frontend_args import frontend_env, frontend_launch
 from miles.backends.sglang_utils.router_args_utils import (
     compute_sglang_router_args,
     resolve_router_policies,
     router_args_to_argv,
 )
 from miles.router.config import compute_miles_router_config
+from miles.router.dynamo.config import Address
+from miles.router.dynamo.frontend import frontend_env, frontend_launch
 from miles.utils.http_utils import resolve_ip
 from miles.utils.workers.argv_utils import config_to_argv
 from miles.utils.workers.worker_spec import LaunchCommandContext, WorkerLaunchContext

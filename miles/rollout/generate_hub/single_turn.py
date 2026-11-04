@@ -2,7 +2,6 @@
 Simple single-turn generation.
 """
 
-from miles.backends.dynamo_utils.generate import post_generate
 from miles.rollout.base_types import GenerateFnInput, GenerateFnOutput
 from miles.rollout.generate_utils.generate_endpoint_utils import (
     compute_prompt_ids_from_sample,
@@ -10,6 +9,7 @@ from miles.rollout.generate_utils.generate_endpoint_utils import (
     compute_routing_headers,
     update_sample_from_response,
 )
+from miles.router.dynamo.api_client import post_generate
 from miles.utils.http_utils import post
 from miles.utils.types import Sample
 

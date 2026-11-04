@@ -4,7 +4,6 @@ from typing import Any, ClassVar
 
 from typing_extensions import Self
 
-from miles.backends.dynamo_utils import launch as dynamo_launch
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
 from miles.backends.sglang_utils.sglang_config import ModelConfig, ServerGroupConfig
 from miles.backends.sglang_utils.sglang_engine import compute_engine_launch_cmd
@@ -12,6 +11,7 @@ from miles.backends.sglang_utils.sglang_scaling_config import ServerGroupScaling
 from miles.ray.utils import NOSET_VISIBLE_DEVICES_ENV_VARS_LIST
 from miles.rollout.session.config import compute_session_server_config
 from miles.router.backend import make_router_backend
+from miles.router.dynamo import launch as dynamo_launch
 from miles.utils.args.configs.scaling import ScalingConfig
 from miles.utils.args.custom_view import compute_custom_function_config
 from miles.utils.args.runtime import InferenceControllerConfig
