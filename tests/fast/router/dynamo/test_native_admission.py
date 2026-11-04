@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from miles.backends.dynamo_utils.serving_registry import DynamoServingRegistry
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
+from miles.router.dynamo.serving_registry import DynamoServingRegistry
 from miles.utils.http_utils import GeneralHttpClientProvider
 from miles.utils.workers.worker_spec import HostAndPort
 
@@ -121,6 +121,6 @@ async def test_started_sidecar_can_lag_engine_readiness(admission, monkeypatch):
         return await post(*args, **kwargs)
 
     monkeypatch.setattr(original, "post", late_start)
-    monkeypatch.setattr("miles.backends.dynamo_utils.serving_registry.asyncio.sleep", AsyncMock())
+    monkeypatch.setattr("miles.router.dynamo.serving_registry.asyncio.sleep", AsyncMock())
     await registry.finish_update(worker_url="http://engine:8000", weight_version="5")
     assert status["published"] is True
