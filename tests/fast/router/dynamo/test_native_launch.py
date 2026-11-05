@@ -2,7 +2,6 @@ import shlex
 from types import SimpleNamespace
 
 import pytest
-from sglang.srt.arg_groups.serving_hook import handle_deprecated_args
 from tests.fast.backends.sglang_utils.conftest import make_engine_args
 from tests.fast.ray.rollout.conftest import make_args
 
@@ -12,7 +11,7 @@ from miles.backends.sglang_utils.sglang_engine import compute_engine_launch_cmd
 from miles.ray.specs.inference import InferenceEngineSpec, RouterSpec
 from miles.router.backend import DynamoRouterBackend, make_router_backend
 from miles.router.dynamo.config import DynamoConfig
-from miles.router.dynamo.sidecar import sidecar_env, sidecar_overrides
+from miles.router.dynamo.sidecar import sidecar_command, sidecar_env, sidecar_overrides
 from miles.utils.args.configs.scaling import ScalingConfig
 from miles.utils.external_utils.command_utils.helm_backend.launcher.values.builder import (
     build_values,
@@ -86,7 +85,27 @@ def test_sidecar_does_not_accept_conflicting_admission_env(config):
 
 
 @pytest.mark.parametrize("api_key", [None, "test-key"])
-def test_native_sidecar_arguments_and_upstream_auth_validation(config, api_key):
+def test_sidecar_env_uses_engine_credentials(config, monkeypatch, api_key):
+    monkeypatch.setenv("DYN_SGLANG_API_KEY", "inherited-key")
+    env = sidecar_env(config, api_key=api_key)
+    assert env.get("DYN_SGLANG_API_KEY") == api_key
+
+
+def test_allocated_listener_replaces_inherited_address_without_changing_engine_argv(config, monkeypatch):
+    monkeypatch.setenv("DYN_SYSTEM_HOST", "old-host")
+    monkeypatch.setenv("DYN_SYSTEM_PORT", "9999")
+    env = sidecar_env(config, api_key=None)
+    assert "DYN_SYSTEM_HOST" not in env
+    assert "DYN_SYSTEM_PORT" not in env
+
+    ctx = SimpleNamespace(self_addrs={"dynamo_system": HostAndPort(host="[::1]", port=18003)})
+    engine_argv = ["python", "-m", "sglang.launch_server", "--model-path", "/models/a b;$HOME"]
+    command = sidecar_command(shlex.join(engine_argv), ctx=ctx)
+    assert shlex.split(command) == ["env", "DYN_SYSTEM_PORT=18003", "DYN_SYSTEM_HOST=::1", *engine_argv]
+
+
+@pytest.mark.parametrize("api_key", [None, "test-key"])
+def test_native_sidecar_arguments_preserve_api_key(config, api_key):
     ctx = SimpleNamespace(
         self_addrs={
             "primary": HostAndPort(host="127.0.0.1", port=18000),
@@ -118,7 +137,6 @@ def test_native_sidecar_arguments_and_upstream_auth_validation(config, api_key):
     assert parsed.grpc_port == 18001
     assert parsed.api_key == api_key
     assert parsed.tp_size == 2
-    handle_deprecated_args(parsed)
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "[::1]", "0.0.0.0"])
