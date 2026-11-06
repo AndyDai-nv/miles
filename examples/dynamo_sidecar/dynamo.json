@@ -1,0 +1,11 @@
+{
+  "namespace": "miles-grpo-sidecar",
+  "discovery": {"backend": "etcd", "endpoints": [{"host": "127.0.0.1", "port": 2379}]},
+  "nats_server": "nats://127.0.0.1:4222",
+  "pins": {
+    "dynamo": "57086811d93986509eda5af37d23cc63e3126aae",
+    "sglang": "318ffdf2e65fbbbc55d30b78be63fb6347f6bc4c",
+    "sglang_branch": "sglang-miles"
+  },
+  "frontend": {"router_mode": "kv"}
+}
