@@ -4,7 +4,7 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-from tests.fast.ray.rollout.conftest import make_args
+from tests.fast.ray.rollout.conftest import make_args, make_serving_registry
 
 from miles.ray.rollout import rollout_server as rollout_server_module
 from miles.ray.rollout.rollout_server import RolloutServer
@@ -36,6 +36,7 @@ class _StubProvider:
 
 def _make_server(*, colocate: bool, init_expected_num_cells: int, cells: dict | None = None) -> RolloutServer:
     return RolloutServer(
+        serving_registry=make_serving_registry(),
         all_server_cells=cells if cells is not None else {},
         args=make_args(colocate=colocate),
         context_lock=ContextLock("InferenceController"),

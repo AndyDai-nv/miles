@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 from sglang.srt.constants import GPU_MEMORY_TYPE_CUDA_GRAPH, GPU_MEMORY_TYPE_KV_CACHE, GPU_MEMORY_TYPE_WEIGHTS
-from tests.fast.ray.rollout.conftest import make_args
+from tests.fast.ray.rollout.conftest import make_args, make_serving_registry
 
 from miles.dashboard import hooks as dashboard_hooks
 from miles.ray.rollout import inference_controller as inference_controller_module
@@ -134,6 +134,9 @@ class _RecordingServer:
     async def onload(self, tags=None):
         self.onload_tags.append(tags)
 
+    async def prepare_weight_update(self):
+        pass
+
     async def dispose(self):
         self.dispose_count += 1
 
@@ -219,6 +222,7 @@ class _FakeUpdatableCell:
         self.api_client = api_client
         self.marked_ready = 0
         self.marked_errored = 0
+        self.finished_versions: list[str | None] = []
         self.mark_errored_error: Exception | None = None
         self.is_errored = False
         self.is_pending_weights = True
@@ -226,6 +230,9 @@ class _FakeUpdatableCell:
 
     async def mark_weights_ready(self) -> None:
         self.marked_ready += 1
+
+    async def finish_weight_update(self, weight_version):
+        self.finished_versions.append(weight_version)
 
     async def mark_errored(self) -> None:
         self.marked_errored += 1
@@ -559,6 +566,7 @@ class TestReconcileAfterAFailedInit:
 
         controller = _make_controller({})
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=False, ft_components=[]),
             context_lock=controller.context_lock,
@@ -584,6 +592,7 @@ class TestReconcileAfterAFailedInit:
         """A dropped cell must vanish from the status surface, otherwise the dashboard shows an engine nobody owns."""
         controller = _make_controller({})
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=make_args(colocate=False, ft_components=[]),
             context_lock=controller.context_lock,
@@ -859,6 +868,7 @@ class TestServersShareTheControllerLock:
         """The controller lock is the very lock its servers require, so reconcile works end to end."""
         controller = _make_controller({})
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=SimpleNamespace(),
             context_lock=controller.context_lock,
@@ -875,6 +885,7 @@ class TestServersShareTheControllerLock:
         """A server wired up with its own lock instead of the controller's is a wiring bug."""
         controller = _make_controller({})
         srv = RolloutServer(
+            serving_registry=make_serving_registry(),
             all_server_cells={},
             args=SimpleNamespace(),
             context_lock=ContextLock("InferenceController"),
@@ -1818,10 +1829,14 @@ class TestEndUpdateWeightsTakesFailedCellsOutOfService:
 
         updatable = await controller.start_update_weights()
         await controller.end_update_weights(
-            snapshot_cell_id_to_hashes=updatable.snapshot_cell_id_to_hashes, failed_cell_ids=["engine-1"]
+            snapshot_cell_id_to_hashes=updatable.snapshot_cell_id_to_hashes,
+            failed_cell_ids=["engine-1"],
+            weight_version="7",
         )
 
         assert (cells["engine-0"].marked_ready, cells["engine-0"].marked_errored) == (1, 0)
+        assert cells["engine-0"].finished_versions == ["7"]
+        assert cells["engine-1"].finished_versions == []
 
     @pytest.mark.asyncio
     async def test_an_update_that_reached_everything_errors_nothing(self):

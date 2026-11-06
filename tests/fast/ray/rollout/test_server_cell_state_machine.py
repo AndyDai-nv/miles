@@ -5,7 +5,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
-from tests.fast.ray.rollout.conftest import make_args, track_server_cell
+from tests.fast.ray.rollout.conftest import make_args, make_serving_registry, track_server_cell
 
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
 from miles.ray.rollout import server_cell as server_cell_module
@@ -164,7 +164,7 @@ def _make_cell(
         ServerCell(
             args=make_args(**(args_overrides or {})),
             meta=_make_meta(**meta_overrides),
-            router_api_client=router or _RecordingRouterApiClient(),
+            serving_registry=make_serving_registry(router or _RecordingRouterApiClient()),
             provider=_StubProvider(),
         )
     )

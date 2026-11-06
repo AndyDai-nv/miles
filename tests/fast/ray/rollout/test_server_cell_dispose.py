@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from tests.fast.ray.rollout.conftest import make_args
+from tests.fast.ray.rollout.conftest import make_args, make_serving_registry
 
 from miles.ray.rollout import server_cell as server_cell_module
 from miles.ray.rollout.cell_state import CellAddrInfo, StateDisposed, StateServing
@@ -53,7 +53,7 @@ def _make_cell(*, router_api_client: MagicMock, needs_offload: bool = False, **a
     return ServerCell(
         args=make_args(num_gpus_per_node=8, **args_overrides),
         meta=_make_meta(needs_offload=needs_offload),
-        router_api_client=router_api_client,
+        serving_registry=make_serving_registry(router_api_client),
         provider=_StubProvider(),
     )
 

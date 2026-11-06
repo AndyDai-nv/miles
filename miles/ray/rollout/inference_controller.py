@@ -237,6 +237,7 @@ class InferenceController:
                 receiver_pool=receiver_pool,
             )
 
+        await srv.prepare_weight_update()
         return UpdatableEngines(
             rollout_engines=srv.api_clients,
             engine_gpu_counts=srv.engine_gpu_counts,
@@ -259,6 +260,7 @@ class InferenceController:
         failed_cell_ids: Sequence[str],
         checksum_model_id: str | None = None,
         collect_checksums: bool = False,
+        weight_version: str | None = None,
     ) -> list[tuple[ServerCellMetadata, Any]] | ChecksumCollectionFailure:
         checksum_results: list[tuple[ServerCellMetadata, Any]] | ChecksumCollectionFailure = []
         if collect_checksums:
@@ -280,6 +282,13 @@ class InferenceController:
         ]
         failed_cells, updated_cells = partition(cells, lambda kv: kv[0] not in failed_cell_ids)
         await asyncio.gather(*[cell.mark_errored() for _, cell in failed_cells])
+        await asyncio.gather(
+            *[
+                cell.finish_weight_update(weight_version)
+                for _, cell in updated_cells
+                if cell.is_pending_weights_or_serving
+            ]
+        )
         await asyncio.gather(*[cell.mark_weights_ready() for _, cell in updated_cells if cell.is_pending_weights])
 
         return checksum_results

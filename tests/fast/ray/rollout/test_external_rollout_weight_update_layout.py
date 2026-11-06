@@ -4,7 +4,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from tests.fast.ray.rollout.conftest import make_args
+from tests.fast.ray.rollout.conftest import make_args, make_serving_registry
 
 from miles.backends.training_utils.weight_update.protocols.broadcast import connect_rollout_engines_from_distributed
 from miles.ray.rollout import external_engine_provider as external_engine_provider_module
@@ -59,6 +59,7 @@ async def _discovered_server(
         meta = _compute_server_cell_meta_from_info(info)
         cells[info.cell_id] = SimpleNamespace(meta=meta, api_client=f"client-{meta.gpu_offset}", is_errored=False)
     return RolloutServer(
+        serving_registry=make_serving_registry(),
         all_server_cells=cells,
         args=args,
         context_lock=ContextLock("InferenceController"),

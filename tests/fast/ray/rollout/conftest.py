@@ -4,13 +4,14 @@ import textwrap
 from argparse import ArgumentParser, Namespace
 from collections.abc import AsyncIterator
 from typing import Any, TypeVar
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import ray
 from sglang_router.launch_router import RouterArgs
 from tests.fast.fixtures.args_fixtures import parser_defaults, resolve_parse_boundary_configs
 
+from miles.ray.rollout.serving_registry import SGLangServingRegistry
 from miles.ray.specs.inference import inference_controller_worker_name
 from miles.utils import object_store
 from miles.utils.args.component_rollout import InferenceRuntimeImmutState, InferenceRuntimeMutState
@@ -18,6 +19,10 @@ from miles.utils.args.configs.router import RouterConfig
 from miles.utils.args.custom_function import CustomFunctionConfig
 from miles.utils.args.runtime import AllConfig, InferenceControllerConfig, RolloutConfig
 from miles.utils.types import Sample
+
+
+def make_serving_registry(router=None) -> SGLangServingRegistry:
+    return SGLangServingRegistry(client=router if router is not None else AsyncMock())
 
 
 def make_args(**overrides: Any) -> Namespace:

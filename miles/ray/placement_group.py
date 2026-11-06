@@ -337,6 +337,7 @@ async def update_weights(
     checksum_results = await inference_controller.end_update_weights(
         snapshot_cell_id_to_hashes=info.snapshot_cell_id_to_hashes,
         failed_cell_ids=output.failed_cell_ids,
+        weight_version=str(output.weight_version) if output.weight_version is not None else None,
         checksum_model_id=trainer_model_id,
         collect_checksums=(
             args.log_inference_engine_weight_checksums

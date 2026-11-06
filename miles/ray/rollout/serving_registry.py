@@ -12,10 +12,23 @@ class ServingRegistry(Protocol):
 
     async def unregister(self, *, worker_url: str) -> None: ...
 
+    async def prepare_update(self, *, worker_url: str) -> None: ...
+
+    async def finish_update(self, *, worker_url: str, weight_version: str | None) -> None: ...
+
+    async def check_health(self, *, worker_url: str, serving: bool) -> None: ...
+
+
+class ServingRegistryFactory(Protocol):
+    def for_worker(self, *, worker_name: str, api_key: str | None) -> ServingRegistry: ...
+
 
 @dataclass(frozen=True)
 class SGLangServingRegistry:
     client: "SGLangRouterApiClient"
+
+    def for_worker(self, *, worker_name: str, api_key: str | None) -> "SGLangServingRegistry":
+        return self
 
     async def register(self, *, worker_url: str, worker_type: WorkerType, bootstrap_port: int | None) -> None:
         await self.client.add_worker(
@@ -26,3 +39,12 @@ class SGLangServingRegistry:
 
     async def unregister(self, *, worker_url: str) -> None:
         await self.client.remove_worker(worker_url=worker_url)
+
+    async def prepare_update(self, *, worker_url: str) -> None:
+        pass
+
+    async def finish_update(self, *, worker_url: str, weight_version: str | None) -> None:
+        pass
+
+    async def check_health(self, *, worker_url: str, serving: bool) -> None:
+        pass
