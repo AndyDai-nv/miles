@@ -2,6 +2,7 @@ import pytest
 from tests.fast.fixtures.args_fixtures import parse_fsdp_test_config
 from tests.fast.ray.rollout.conftest import make_args
 
+from miles.ray.specs.inference import InferenceEngineSpec
 from miles.router.dynamo.arguments import validate_dynamo_args
 from miles.router.dynamo.config import DynamoConfig
 from miles.utils.args.runtime import InferenceControllerConfig
@@ -73,18 +74,25 @@ def test_sglang_router_policies_point_to_dynamo_configuration(configured_args, p
 
 
 @pytest.mark.parametrize(
-    "base_dp,override_dp,accepted", [(1, None, True), (2, None, False), (1, 2, False), (2, 1, True)]
+    "base_dp,override_dp,effective_dp",
+    [(1, None, 1), (2, None, 2), (4, None, 4), (1, 2, 2), (2, 1, 1), (2, 4, 4), (4, 2, 2)],
 )
-def test_dp_validation_uses_resolved_per_engine_value(configured_args, base_dp, override_dp, accepted):
-    args = make_args(router="dynamo", dynamo_config=configured_args.dynamo_config, sglang_dp_size=base_dp)
+def test_dp_launch_uses_resolved_per_engine_value(configured_args, base_dp, override_dp, effective_dp):
+    args = make_args(
+        router="dynamo",
+        dynamo_config=configured_args.dynamo_config,
+        sglang_dp_size=base_dp,
+        rollout_num_gpus_per_engine=8,
+    )
     model = args.sglang.models[0]
     group = model.server_groups[0]
     overrides = group.overrides | ({"dp_size": override_dp} if override_dp is not None else {})
     model = model.model_copy(update={"server_groups": [group.model_copy(update={"overrides": overrides})]})
     sglang = args.sglang.model_copy(update={"models": [model]})
-    if accepted:
-        validate_dynamo_args(args, sglang=sglang)
-        assert isinstance(args.dynamo_config, DynamoConfig)
-    else:
-        with pytest.raises(ValueError, match="per-engine dp_size=1"):
-            validate_dynamo_args(args, sglang=sglang)
+    args.sglang = sglang
+    validate_dynamo_args(args, sglang=sglang)
+    assert isinstance(args.dynamo_config, DynamoConfig)
+    spec = InferenceEngineSpec.create(args)[0]
+    ports = {port.name: port for port in spec.port_infos}
+    assert ports["dynamo_kv"].num_consecutive == effective_dp
+    assert ports["dist_init"].num_consecutive == 30 + effective_dp
