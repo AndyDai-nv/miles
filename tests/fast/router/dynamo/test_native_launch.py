@@ -7,10 +7,11 @@ from tests.fast.ray.rollout.conftest import make_args
 
 from miles.backends.sglang_utils.server_args_utils import parse_server_args_argv
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
+from miles.backends.sglang_utils.sglang_config import ServerGroupConfig
 from miles.backends.sglang_utils.sglang_engine import compute_engine_launch_cmd
 from miles.ray.specs.inference import InferenceEngineSpec
 from miles.router.dynamo.config import DynamoConfig
-from miles.router.dynamo.sidecar import sidecar_command, sidecar_env, sidecar_overrides
+from miles.router.dynamo.sidecar import sidecar_command, sidecar_env, sidecar_overrides, sidecar_ports
 from miles.utils.args.configs.scaling import ScalingConfig
 from miles.utils.workers.launch_gate import GATE_PORT_NAME
 from miles.utils.workers.worker_spec import HostAndPort, LaunchCommandContext
@@ -92,17 +93,12 @@ def test_allocated_listener_replaces_inherited_address_without_changing_engine_a
 
 
 @pytest.mark.parametrize("api_key", [None, "test-key"])
-def test_native_sidecar_arguments_preserve_api_key(config, api_key):
-    ctx = SimpleNamespace(
-        self_addrs={
-            "primary": HostAndPort(host="127.0.0.1", port=18000),
-            "dynamo_grpc": HostAndPort(host="127.0.0.1", port=18001),
-            "dynamo_kv": HostAndPort(host="127.0.0.1", port=18002),
-        }
-    )
-    overrides = sidecar_overrides(config, overrides={}, ctx=ctx)
+def test_native_sidecar_arguments_preserve_api_key(config, api_key, sidecar_ctx, group):
+    ctx = sidecar_ctx
+    args = make_engine_args(sglang_api_key=api_key)
+    overrides = sidecar_overrides(config, sglang=args.sglang, group=group, ctx=ctx)
     command = compute_engine_launch_cmd(
-        make_engine_args(sglang_api_key=api_key),
+        args,
         interpreter_prefix=["python"],
         node_rank=0,
         worker_type=WorkerType.REGULAR,
@@ -124,3 +120,85 @@ def test_native_sidecar_arguments_preserve_api_key(config, api_key):
     assert parsed.grpc_port == 18001
     assert parsed.api_key == api_key
     assert parsed.tp_size == 2
+
+
+@pytest.fixture
+def sidecar_ctx():
+    return SimpleNamespace(
+        self_addrs={
+            "primary": HostAndPort(host="127.0.0.1", port=18000),
+            "dynamo_grpc": HostAndPort(host="127.0.0.1", port=18001),
+            "dynamo_kv": HostAndPort(host="127.0.0.1", port=18002),
+        }
+    )
+
+
+@pytest.mark.parametrize("scope", ["base", "group"])
+@pytest.mark.parametrize(
+    "name,value",
+    [
+        ("grpc_mode", True),
+        ("smg_grpc_mode", True),
+        ("sidecar", "other.sidecar"),
+        ("grpc_port", 9999),
+        ("kv_events_config", '{"publisher": "other"}'),
+        ("sidecar_args", ["--namespace", "other"]),
+    ],
+)
+def test_sidecar_rejects_conflicting_effective_settings(config, sidecar_ctx, scope, name, value, group):
+    args = make_engine_args(**{f"sglang_{name}": value}) if scope == "base" else make_engine_args()
+    if scope == "group":
+        group = group.model_copy(update={"overrides": {**group.overrides, name: value}})
+    with pytest.raises(ValueError, match="legacy gRPC mode" if name.endswith("grpc_mode") else name):
+        sidecar_overrides(config, sglang=args.sglang, group=group, ctx=sidecar_ctx)
+
+
+def test_sidecar_uses_group_precedence_without_mutating_config(config, sidecar_ctx, group):
+    args = make_engine_args(sglang_grpc_mode=True, sglang_sidecar="other.sidecar")
+    group = group.model_copy(
+        update={"overrides": {**group.overrides, "grpc_mode": False, "sidecar": "dynamo.sglang.sidecar"}}
+    )
+    overrides = sidecar_overrides(config, sglang=args.sglang, group=group, ctx=sidecar_ctx)
+    assert overrides["sidecar"] == "dynamo.sglang.sidecar"
+    assert args.sglang.base_args["grpc_mode"] is True
+    assert "grpc_port" not in group.overrides
+
+
+def test_sidecar_rejects_group_streaming_opt_out(config, sidecar_ctx, group):
+    args = make_engine_args()
+    group = group.model_copy(update={"overrides": {"incremental_streaming_output": False}})
+    with pytest.raises(ValueError, match="incremental_streaming_output"):
+        sidecar_overrides(config, sglang=args.sglang, group=group, ctx=sidecar_ctx)
+
+
+@pytest.fixture
+def group():
+    return ServerGroupConfig(worker_type=WorkerType.REGULAR, num_gpus_per_engine=2, needs_offload=False)
+
+
+@pytest.mark.parametrize("dp_size", [1, 2, 4])
+def test_kv_event_ports_reserve_every_dp_rank(dp_size):
+    ports = {port.name: port for port in sidecar_ports(dp_size=dp_size)}
+    kv = ports["dynamo_kv"]
+    assert kv.allow_dynamic
+    assert kv.num_consecutive == dp_size
+    first = kv.effective_static_port(worker_in_pod_index=0)
+    second = kv.effective_static_port(worker_in_pod_index=1)
+    assert first + dp_size <= second
+    assert ports["dynamo_grpc"].num_consecutive == 1
+    assert ports["dynamo_system"].num_consecutive == 1
+
+
+@pytest.mark.parametrize("scope", ["base", "group"])
+@pytest.mark.parametrize("dp_size", [1, 2])
+def test_engine_spec_reserves_effective_dp_ports(config, scope, dp_size):
+    args = make_args(dynamo_config=config, sglang_dp_size=dp_size if scope == "base" else 1)
+    if scope == "group":
+        model = args.sglang.models[0]
+        group = model.server_groups[0]
+        group = group.model_copy(update={"overrides": {**group.overrides, "dp_size": dp_size}})
+        args.sglang = args.sglang.model_copy(update={"models": [model.model_copy(update={"server_groups": [group]})]})
+    spec = InferenceEngineSpec.create(args)[0]
+    ports = {port.name: port for port in spec.port_infos}
+    assert ports["dynamo_kv"].num_consecutive == dp_size
+    assert ports["dist_init"].num_consecutive == 30 + dp_size

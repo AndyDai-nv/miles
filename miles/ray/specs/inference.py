@@ -353,7 +353,7 @@ class InferenceEngineSpec(BaseCommandSpec):
         overrides = server_group_config.overrides
         dynamo = args.dynamo_config
         if dynamo is not None:
-            overrides = dynamo_launch.sidecar_overrides(dynamo, overrides=overrides, ctx=ctx)
+            overrides = dynamo_launch.sidecar_overrides(dynamo, sglang=args.sglang, group=server_group_config, ctx=ctx)
         command = compute_engine_launch_cmd(
             args=args,
             interpreter_prefix=interpreter_prefix,
@@ -441,7 +441,11 @@ def _compute_spec_inference_engine(
             ),
             PortInfo(name="engine_info_bootstrap", static_port=12000, mode="master", allow_dynamic=True),
             PortInfo(name=GATE_PORT_NAME, static_port=13000, mode="master", allow_dynamic=True),
-            *(dynamo_launch.sidecar_ports() if args.dynamo_config is not None else []),
+            *(
+                dynamo_launch.sidecar_ports(dp_size=args.sglang.get_value("dp_size", group=server_group_config))
+                if args.dynamo_config is not None
+                else []
+            ),
         ],
         # TODO: reduce complexity around passing around configs later during arguments refactor
         partial_static_meta=StaticMeta(
