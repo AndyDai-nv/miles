@@ -2,6 +2,7 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from tests.fast.ray.rollout.conftest import make_serving_registry
 
 from miles.ray.rollout.rollout_server import RolloutServer
 from miles.utils.context_lock import ContextLock
@@ -15,6 +16,7 @@ class _StubProvider:
 
 def _make_server(context_lock: ContextLock | None = None, **overrides) -> RolloutServer:
     return RolloutServer(
+        serving_registry=make_serving_registry(),
         all_server_cells={},
         args=SimpleNamespace(colocate=True),
         context_lock=context_lock or ContextLock("InferenceController"),

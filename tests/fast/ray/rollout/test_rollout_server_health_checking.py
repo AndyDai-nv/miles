@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
-from tests.fast.ray.rollout.conftest import make_args, track_server_cell
+from tests.fast.ray.rollout.conftest import make_args, make_serving_registry, track_server_cell
 
 from miles.ray.rollout import server_cell as server_cell_module
 from miles.ray.rollout.rollout_server import RolloutServer
@@ -44,6 +44,7 @@ def _make_meta(cell_id: str = "cell-0", **overrides) -> ServerCellMetadata:
 
 def _make_server(*, ft_components=("rollout",), **overrides) -> RolloutServer:
     return RolloutServer(
+        serving_registry=make_serving_registry(),
         all_server_cells={},
         args=make_args(colocate=True, ft_components=list(ft_components)),
         context_lock=ContextLock("InferenceController"),
@@ -57,7 +58,7 @@ def _make_cell(*, global_activeness=None, router=None, **meta_overrides) -> Serv
         ServerCell(
             args=make_args(ft_components=["rollout"]),
             meta=_make_meta(**meta_overrides),
-            router_api_client=router or SimpleNamespace(),
+            serving_registry=make_serving_registry(router),
             provider=_StubProvider(),
             health_checker_activeness=global_activeness or (lambda: ActiveAndEpoch(active=True, epoch=0)),
         )
@@ -108,7 +109,9 @@ class TestHealthCheckerActiveness:
     async def test_a_cell_that_skips_pending_weights_is_probed(self, monkeypatch):
         """A frozen model goes straight to serving, and an unwatched serving cell is a hole in FT."""
         _stub_network(monkeypatch)
-        cell = _make_cell(router=SimpleNamespace(add_worker=_noop_add_worker), update_weights=False)
+        cell = _make_cell(
+            router=SimpleNamespace(add_worker=_noop_add_worker, remove_worker=_noop_add_worker), update_weights=False
+        )
 
         await cell.init()
         await cell.tick()

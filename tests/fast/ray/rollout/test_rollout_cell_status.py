@@ -2,8 +2,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
-
-from tests.fast.ray.rollout.conftest import make_args
+from tests.fast.ray.rollout.conftest import make_args, make_serving_registry
 
 from miles.ray.rollout.cell_state import (
     CellAddrInfo,
@@ -51,7 +50,7 @@ def _make_cell(state: CellState, health: TriState = TriState.TRUE, workers_hash:
             update_weights=True,
             workers_hash=workers_hash,
         ),
-        router_api_client=SimpleNamespace(),
+        serving_registry=make_serving_registry(SimpleNamespace()),
         provider=_StubProvider(),
     )
     cell._state = state

@@ -1,7 +1,7 @@
 import dataclasses
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -9,7 +9,6 @@ from sglang.srt.constants import GPU_MEMORY_TYPE_WEIGHTS
 
 from miles.backends.sglang_utils.sglang_api_client import SGLangApiClient, WorkerType, probe_server_healthy
 from miles.backends.sglang_utils.sglang_engine import build_server_url
-from miles.backends.sglang_utils.sglang_router_api_client import SGLangRouterApiClient
 from miles.ray.rollout.cell_state import (
     CellAddrInfo,
     CellState,
@@ -21,7 +20,7 @@ from miles.ray.rollout.cell_state import (
     StateUninitialized,
 )
 from miles.ray.rollout.engine_env_reporter import EngineEnvReporter
-from miles.ray.rollout.serving_registry import ServingRegistry, SGLangServingRegistry
+from miles.ray.rollout.serving_registry import ServingRegistry
 from miles.utils.ft_utils.api_server.models import CellCondition, CellStatus, TriState
 from miles.utils.ft_utils.health_checker import (
     ActiveAndEpoch,
@@ -60,10 +59,9 @@ class ServerCellMetadata(FrozenStrictBaseModel):
 class ServerCell:
     args: Any
     meta: ServerCellMetadata
-    router_api_client: SGLangRouterApiClient
+    serving_registry: ServingRegistry
     provider: BaseWorkerProvider
     health_checker_activeness: Callable[[], ActiveAndEpoch] = lambda: ActiveAndEpoch(active=True, epoch=0)
-    serving_registry: ServingRegistry | None = None
     _health_checker: BaseHealthChecker = dataclasses.field(init=False)
     _env_reporter: EngineEnvReporter = dataclasses.field(init=False)
     _state: CellState = dataclasses.field(default_factory=StateUninitialized)
@@ -75,6 +73,7 @@ class ServerCell:
             name=f"rollout-cell-{self.meta.cell_id}",
             get_api_client=lambda: self.api_client,
             get_activeness=self._get_health_checker_active_and_epoch,
+            check_serving=self._check_serving_health,
         )
         self._health_checker.start()
 
@@ -84,6 +83,9 @@ class ServerCell:
         return ActiveAndEpoch(
             active=cell_active and controller_active_and_epoch.active, epoch=controller_active_and_epoch.epoch
         )
+
+    async def _check_serving_health(self) -> None:
+        await self.serving_registry.check_health(worker_url=self.server_url, serving=self.is_serving)
 
     def __del__(self) -> None:
         assert isinstance(self._state, StateDisposed), (
@@ -235,18 +237,18 @@ class ServerCell:
         await self._register_with_router(addr_info=self._state.addr_info)
         self._mark_serving()
 
+    async def prepare_weight_update(self) -> None:
+        await self.serving_registry.prepare_update(worker_url=self.server_url)
+
+    async def finish_weight_update(self, weight_version: str | None) -> None:
+        await self.serving_registry.finish_update(worker_url=self.server_url, weight_version=weight_version)
+
     async def _register_with_router(self, addr_info: CellAddrInfo) -> None:
-        await self._registry.register(
+        await self.serving_registry.register(
             worker_url=addr_info.server_url,
             worker_type=self.meta.worker_type,
             bootstrap_port=addr_info.bootstrap_port,
         )
-
-    @property
-    def _registry(self) -> ServingRegistry:
-        if self.serving_registry is None:
-            self.serving_registry = SGLangServingRegistry(client=self.router_api_client)
-        return self.serving_registry
 
     async def mark_errored(self) -> None:
         if isinstance(self._state, (StateErrored, StateDisposed)):
@@ -277,7 +279,7 @@ class ServerCell:
 
     async def _unregister_from_router(self) -> None:
         await retry_until_deadline(
-            lambda _: self._registry.unregister(worker_url=self.server_url),
+            lambda _: self.serving_registry.unregister(worker_url=self.server_url),
             total_seconds=UNREGISTER_FROM_ROUTER_TIMEOUT,
             attempt_seconds=SHUTDOWN_TIMEOUT,
             retry_on=Exception,
@@ -343,6 +345,7 @@ def create_rollout_cell_health_checker(
     name: str,
     get_api_client: Callable[[], SGLangApiClient],
     get_activeness: Callable[[], ActiveAndEpoch],
+    check_serving: Callable[[], Awaitable[None]] | None = None,
 ) -> BaseHealthChecker:
     if "rollout" not in args.ft_components:
         return NoopHealthChecker()
@@ -351,6 +354,8 @@ def create_rollout_cell_health_checker(
 
     async def _check() -> None:
         await get_api_client().health_generate(timeout=config.timeout)
+        if check_serving is not None:
+            await check_serving()
 
     return SimpleHealthChecker(name=name, check_fn=_check, get_activeness=get_activeness, config=config)
 

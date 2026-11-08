@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from tests.fast.ray.rollout.conftest import make_args, track_server_cell
+from tests.fast.ray.rollout.conftest import make_args, make_serving_registry, track_server_cell
 
 from miles.ray.rollout import server_cell as server_cell_module
 from miles.ray.rollout.cell_state import CellAddrInfo, StatePendingWeights
@@ -41,7 +41,7 @@ class TestServerCellAbortAll:
                     update_weights=True,
                     workers_hash="pseudo-hash-0",
                 ),
-                router_api_client=None,
+                serving_registry=make_serving_registry(None),
                 provider=None,
             )
         )
