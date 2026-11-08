@@ -187,3 +187,18 @@ def test_kv_event_ports_reserve_every_dp_rank(dp_size):
     assert first + dp_size <= second
     assert ports["dynamo_grpc"].num_consecutive == 1
     assert ports["dynamo_system"].num_consecutive == 1
+
+
+@pytest.mark.parametrize("scope", ["base", "group"])
+@pytest.mark.parametrize("dp_size", [1, 2])
+def test_engine_spec_reserves_effective_dp_ports(config, scope, dp_size):
+    args = make_args(dynamo_config=config, sglang_dp_size=dp_size if scope == "base" else 1)
+    if scope == "group":
+        model = args.sglang.models[0]
+        group = model.server_groups[0]
+        group = group.model_copy(update={"overrides": {**group.overrides, "dp_size": dp_size}})
+        args.sglang = args.sglang.model_copy(update={"models": [model.model_copy(update={"server_groups": [group]})]})
+    spec = InferenceEngineSpec.create(args)[0]
+    ports = {port.name: port for port in spec.port_infos}
+    assert ports["dynamo_kv"].num_consecutive == dp_size
+    assert ports["dist_init"].num_consecutive == 30 + dp_size
