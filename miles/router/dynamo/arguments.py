@@ -31,8 +31,6 @@ def validate_dynamo_args(args, *, sglang: SglangConfig) -> None:
         raise ValueError("Dynamo fully-async colocation needs admission deferred until the driver's resume")
     if args.recompute_logprobs_via_prefill:
         raise ValueError("Dynamo native generate does not yet support batched prefill scoring")
-    if any(sglang.get_value("dp_size", group) != 1 for model in sglang.models for group in model.server_groups):
-        raise ValueError("Dynamo managed launch requires per-engine dp_size=1; TP engines are supported")
     if args.sglang_router_policy is not None:
         raise ValueError("--sglang-router-policy does not apply to Dynamo; configure frontend.router_mode instead")
     if args.sglang_grpc_mode or args.sglang_smg_grpc_mode:

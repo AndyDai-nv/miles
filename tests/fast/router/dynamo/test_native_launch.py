@@ -106,9 +106,10 @@ def test_allocated_listener_replaces_inherited_address_without_changing_engine_a
 
 
 @pytest.mark.parametrize("api_key", [None, "test-key"])
-def test_native_sidecar_arguments_preserve_api_key(config, api_key, sidecar_ctx, group):
+@pytest.mark.parametrize("dp_size", [1, 2, 4])
+def test_native_sidecar_arguments_preserve_api_key(config, api_key, sidecar_ctx, group, dp_size):
     ctx = sidecar_ctx
-    args = make_engine_args(sglang_api_key=api_key)
+    args = make_engine_args(sglang_api_key=api_key, sglang_dp_size=dp_size)
     overrides = sidecar_overrides(config, sglang=args.sglang, group=group, ctx=ctx)
     command = compute_engine_launch_cmd(
         args,
@@ -117,7 +118,7 @@ def test_native_sidecar_arguments_preserve_api_key(config, api_key, sidecar_ctx,
         worker_type=WorkerType.REGULAR,
         base_gpu_id=0,
         sglang_overrides=overrides,
-        num_gpus_per_engine=2,
+        num_gpus_per_engine=8,
         dist_init_addr="127.0.0.1:18003",
         nccl_port=18004,
         host="127.0.0.1",
@@ -132,7 +133,8 @@ def test_native_sidecar_arguments_preserve_api_key(config, api_key, sidecar_ctx,
     assert parsed.sidecar_args == overrides["sidecar_args"]
     assert parsed.grpc_port == 18001
     assert parsed.api_key == api_key
-    assert parsed.tp_size == 2
+    assert parsed.tp_size == 8
+    assert parsed.dp_size == dp_size
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "[::1]", "0.0.0.0"])
