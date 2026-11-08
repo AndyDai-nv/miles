@@ -2,17 +2,19 @@ import json
 import os
 import shlex
 from sglang.srt.server_args import ServerArgs
+from miles.backends.sglang_utils.sglang_config import ServerGroupConfig, SglangConfig
 from miles.router.dynamo.config import Address
 from miles.router.dynamo.frontend import launch_args, runtime_env
 from miles.utils.workers.argv_utils import _record_field_names
 from miles.utils.workers.worker_spec import PortInfo
 
 
-def sidecar_ports() -> list[PortInfo]:
+def sidecar_ports(*, dp_size: int) -> list[PortInfo]:
     return [
         PortInfo(name="dynamo_grpc", static_port=14000, allow_dynamic=True),
         PortInfo(name="dynamo_system", static_port=15000, allow_dynamic=True),
-        PortInfo(name="dynamo_kv", static_port=16000, allow_dynamic=True),
+        # SGLang adds dp_rank to the KV-event publisher endpoint on each rank.
+        PortInfo(name="dynamo_kv", static_port=16000, allow_dynamic=True, num_consecutive=dp_size),
     ]
 
 
@@ -34,7 +36,7 @@ def sidecar_env(config, *, api_key: str | None) -> dict[str, str]:
     )
 
 
-def sidecar_overrides(config, *, overrides: dict, ctx) -> dict:
+def sidecar_overrides(config, *, sglang: SglangConfig, group: ServerGroupConfig, ctx) -> dict:
     required = {"sidecar", "sidecar_args", "grpc_port", "incremental_streaming_output", "kv_events_config"}
     if missing := required - set(_record_field_names(ServerArgs)):
         raise ValueError(f"Build SGLang from the pinned sglang-miles revision; missing fields: {sorted(missing)}")
@@ -60,11 +62,15 @@ def sidecar_overrides(config, *, overrides: dict, ctx) -> dict:
         ),
     }
     for name, value in managed.items():
-        if name in overrides and overrides[name] != value:
+        # Miles enables deltas over the global default; an explicit group opt-out is a conflict.
+        if name == "incremental_streaming_output" and name not in group.overrides:
+            continue
+        current = sglang.get_value(name, group=group)
+        if current is not None and current != value:
             raise ValueError(f"SGLang {name} conflicts with the Dynamo launch contract")
-    if overrides.get("grpc_mode") or overrides.get("smg_grpc_mode"):
+    if sglang.get_value("grpc_mode", group=group) or sglang.get_value("smg_grpc_mode", group=group):
         raise ValueError("Dynamo needs native --grpc-port alongside HTTP, not legacy gRPC mode")
-    return {**overrides, **managed}
+    return {**group.overrides, **managed}
 
 
 def sidecar_command(command: str, *, ctx) -> str:
