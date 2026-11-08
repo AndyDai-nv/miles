@@ -40,10 +40,11 @@ Compare end-to-end wall-clock timing and per-rollout rewards. Record startup
 separately, along with exact revisions and runtime settings.
 
 Frontend/sidecar native options go in their `extra_args` or `env`; namespace,
-transport, authentication and allocated listeners remain Miles-owned. The first
-revision supports one aggregated model with TP engines and SGLang DP=1; snapshot
-evaluation, batched prefill scoring, fully-async colocation and SMG routing-key
-policies are rejected.
+transport, authentication and allocated listeners remain Miles-owned. TP and DP
+settings use the native SGLang configuration, including per-group overrides;
+Miles reserves a KV-event publisher port for each DP rank. The first revision
+supports one aggregated model; snapshot evaluation, batched prefill scoring,
+fully-async colocation and SMG routing-key policies are rejected.
 
 Admission withdraws discovery membership before the native weight-update session
 and verifies the trainer version before readmission. It is not a router-cache
