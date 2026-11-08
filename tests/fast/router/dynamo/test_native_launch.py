@@ -189,13 +189,17 @@ def test_frontend_uses_shared_router_spec_and_preallocation_environment(config, 
     assert argv[-2:] == ["--log-level", "debug"]
 
 
-def test_frontend_rejects_explicit_environment_conflicts(config):
-    config = config.model_copy(update={"env": {"NATS_SERVER": "nats://other-run:4222"}})
+@pytest.mark.parametrize(
+    "key,value",
+    [("NATS_SERVER", "nats://other-run:4222"), ("DYN_HTTP_HOST", "127.0.0.1"), ("DYN_HTTP_PORT", "20000")],
+)
+def test_frontend_rejects_explicit_environment_conflicts(config, key, value):
+    config = config.model_copy(update={"env": {key: value}})
     args = make_args(router="dynamo", dynamo_config=config)
     spec = RouterSpec.create(args)[0]
     context = WorkerLaunchContext(args=args, cell_index=0, worker_in_cell_index=0, num_workers_per_cell=1, gpu_ids=[])
 
-    with pytest.raises(ValueError, match="NATS_SERVER"):
+    with pytest.raises(ValueError, match=key):
         spec.env_var(context)
 
 
