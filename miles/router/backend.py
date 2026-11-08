@@ -151,13 +151,11 @@ class DynamoRouterBackend(RouterBackend):
         self, ctx: LaunchCommandContext, *, model_cfg: "ModelConfig", interpreter_prefix: list[str]
     ) -> list[str]:
         primary = ctx.self_addrs["primary"]
-        argv, _ = frontend_launch(
+        return frontend_launch(
             self.args.dynamo_config,
             address=Address(host=primary.host.strip("[]"), port=primary.port),
             interpreter_prefix=interpreter_prefix,
-            inherited_env=os.environ,
         )
-        return argv
 
 
 _BACKEND_CLASSES: dict[RouterKind, type[RouterBackend]] = {
