@@ -216,10 +216,17 @@ def _next_actor():
     return actor
 
 
-async def _post(client, url, payload, max_retries=60, action="post", headers=None):
+async def _post(
+    client, url, payload, max_retries=60, action="post", headers=None, response_decoder=None, response_timeout=None
+):
     retry_count = 0
     while retry_count < max_retries:
         try:
+            if response_decoder is not None:
+                async with asyncio.timeout(response_timeout):
+                    async with client.stream(action.upper(), url, json=payload or {}, headers=headers) as response:
+                        response.raise_for_status()
+                        return await response_decoder(response)
             if action in ("delete", "get"):
                 assert not payload
                 response = await getattr(client, action)(
@@ -238,7 +245,7 @@ async def _post(client, url, payload, max_retries=60, action="post", headers=Non
             retry_count += 1
 
             if isinstance(e, httpx.HTTPStatusError):
-                response_text = e.response.text
+                response_text = e.response.text if e.response.is_stream_consumed else None
                 if 400 <= e.response.status_code < 500 and e.response.status_code not in (408, 429):
                     raise
             else:
@@ -392,8 +399,26 @@ def _init_ray_distributed_post(args):
                 timeout=httpx.Timeout(None),
             )
 
-        async def do_post(self, url, payload, max_retries=60, action="post", headers=None):
-            return await _post(self._client, url, payload, max_retries, action=action, headers=headers)
+        async def do_post(
+            self,
+            url,
+            payload,
+            max_retries=60,
+            action="post",
+            headers=None,
+            response_decoder=None,
+            response_timeout=None,
+        ):
+            return await _post(
+                self._client,
+                url,
+                payload,
+                max_retries,
+                action=action,
+                headers=headers,
+                response_decoder=response_decoder,
+                response_timeout=response_timeout,
+            )
 
     # Create actors per node
     created = []
@@ -433,18 +458,37 @@ def _rollout_client() -> httpx.AsyncClient:
 
 
 # TODO may generalize the name since it now contains http DELETE/GET etc (with retries and remote-execution)
-async def post(url, payload, max_retries=60, action="post", headers=None):
+async def post(
+    url, payload, max_retries=60, action="post", headers=None, response_decoder=None, response_timeout=None
+):
     # If distributed mode is enabled and actors exist, dispatch via Ray.
     if _distributed_post_enabled and _post_actors:
         try:
             actor = _next_actor()
             if actor is not None:
-                return await actor.do_post.remote(url, payload, max_retries, action=action, headers=headers)
+                return await actor.do_post.remote(
+                    url,
+                    payload,
+                    max_retries,
+                    action=action,
+                    headers=headers,
+                    response_decoder=response_decoder,
+                    response_timeout=response_timeout,
+                )
         except Exception as e:
             logger.info(f"[http_utils] Distributed POST failed, falling back to local: {e} (url={url})")
             # fall through to local
 
-    return await _post(_rollout_client(), url, payload, max_retries, action=action, headers=headers)
+    return await _post(
+        _rollout_client(),
+        url,
+        payload,
+        max_retries,
+        action=action,
+        headers=headers,
+        response_decoder=response_decoder,
+        response_timeout=response_timeout,
+    )
 
 
 # TODO unify w/ `post` to add retries and remote-execution
