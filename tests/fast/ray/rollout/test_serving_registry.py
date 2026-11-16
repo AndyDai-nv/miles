@@ -71,7 +71,8 @@ async def test_injected_registry_owns_registration_and_cleanup():
 
 
 @pytest.mark.parametrize("router", ["sglang", "dynamo"])
-async def test_registry_is_injected_at_creation_and_isolates_engine_incarnations(router):
+@pytest.mark.parametrize("debug_rollout_only", [False, True])
+async def test_registry_is_injected_at_creation_and_isolates_engine_incarnations(router, debug_rollout_only):
     config = (
         DynamoConfig(
             namespace="test-run",
@@ -81,7 +82,9 @@ async def test_registry_is_injected_at_creation_and_isolates_engine_incarnations
         if router == "dynamo"
         else None
     )
-    args = make_args(router=router, dynamo_config=config, colocate=True, ft_components=[])
+    args = make_args(
+        router=router, dynamo_config=config, debug_rollout_only=debug_rollout_only, colocate=True, ft_components=[]
+    )
     model_name = args.sglang.models[0].name
     provider = MagicMock()
     provider.expected_num_cells.return_value = 2
@@ -117,6 +120,8 @@ async def test_registry_is_injected_at_creation_and_isolates_engine_incarnations
                 assert first.provider is provider
                 assert first.worker_name == "cell-0-0"
                 assert first.api_key == "engine-key"
+                assert first.debug_rollout_only is debug_rollout_only
+                assert second.debug_rollout_only is debug_rollout_only
                 first._session = "old-session"
                 first._expected_version = "old-version"
                 assert second is not first
