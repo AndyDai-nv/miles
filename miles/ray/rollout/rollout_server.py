@@ -42,9 +42,7 @@ async def create_rollout_servers(
         registry: ServingRegistryFactory
         if args.dynamo_config is not None:
             registry = DynamoServingRegistryFactory(
-                provider=engine_provider,
-                timeout_seconds=args.dynamo_config.control_timeout_seconds,
-                debug_rollout_only=args.debug_rollout_only,
+                provider=engine_provider, timeout_seconds=args.dynamo_config.control_timeout_seconds
             )
         else:
             registry = SGLangServingRegistry(client=SGLangRouterApiClient(router_url=router_addr.addr))
