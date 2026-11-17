@@ -15,6 +15,7 @@ class DynamoServingRegistry:
     worker_name: str
     api_key: str | None
     timeout_seconds: float
+    debug_rollout_only: bool = False
     _expected_version: str | None = None
     _session: str | None = None
 
@@ -31,7 +32,11 @@ class DynamoServingRegistry:
                 response.raise_for_status()
                 break
             except httpx.HTTPStatusError as error:
-                if error.response.status_code not in (408, 429, 500, 502, 503, 504):
+                # The listener can precede route registration. Only the initial read-only
+                # handshake treats 404 as readiness; the enclosing control deadline still applies.
+                if error.response.status_code == 404 and action == "status" and self._session is None:
+                    pass
+                elif error.response.status_code not in (408, 429, 500, 502, 503, 504):
                     raise
             except httpx.TransportError:
                 pass
@@ -96,7 +101,9 @@ class DynamoServingRegistry:
         await self.unregister(worker_url=worker_url)
 
     async def finish_update(self, *, worker_url: str, weight_version: str | None) -> None:
-        if weight_version is None:
+        # Only an explicit rollout-only run may fall back to the engine's observed version.
+        # Normal training must provide its completed version, including the first update.
+        if weight_version is None and (not self.debug_rollout_only or self._expected_version is not None):
             raise ValueError("Dynamo admission requires the trainer's completed weight version")
         self._expected_version = weight_version
         await self.register(worker_url=worker_url, worker_type=WorkerType.REGULAR, bootstrap_port=None)
