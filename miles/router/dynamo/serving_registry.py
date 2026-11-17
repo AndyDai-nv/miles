@@ -13,10 +13,15 @@ from miles.utils.workers.worker_provider.base import BaseWorkerProvider
 class DynamoServingRegistryFactory:
     provider: BaseWorkerProvider
     timeout_seconds: float
+    debug_rollout_only: bool = False
 
     def for_worker(self, *, worker_name: str, api_key: str | None) -> "DynamoServingRegistry":
         return DynamoServingRegistry(
-            provider=self.provider, worker_name=worker_name, api_key=api_key, timeout_seconds=self.timeout_seconds
+            provider=self.provider,
+            worker_name=worker_name,
+            api_key=api_key,
+            timeout_seconds=self.timeout_seconds,
+            debug_rollout_only=self.debug_rollout_only,
         )
 
 

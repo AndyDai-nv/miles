@@ -6,9 +6,18 @@ import httpx
 import pytest
 
 from miles.backends.sglang_utils.sglang_api_client import WorkerType
-from miles.router.dynamo.serving_registry import DynamoServingRegistry
+from miles.router.dynamo.serving_registry import DynamoServingRegistry, DynamoServingRegistryFactory
 from miles.utils.http_utils import GeneralHttpClientProvider
 from miles.utils.workers.worker_spec import HostAndPort
+
+
+def test_registry_factory_preserves_explicit_rollout_only_mode():
+    factory = DynamoServingRegistryFactory(provider=AsyncMock(), timeout_seconds=1, debug_rollout_only=True)
+    first = factory.for_worker(worker_name="engine-0", api_key=None)
+    second = factory.for_worker(worker_name="engine-1", api_key=None)
+    assert first.debug_rollout_only is True
+    assert second.debug_rollout_only is True
+    assert first is not second
 
 
 @pytest.fixture
