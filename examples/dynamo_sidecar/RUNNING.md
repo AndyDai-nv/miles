@@ -50,3 +50,11 @@ Admission withdraws discovery membership before the native weight-update session
 and verifies the trainer version before readmission. It is not a router-cache
 convergence barrier or per-request execution fence: native pause/update/resume
 still owns execution safety. Lost sidecar grants feed the native FT health checker.
+
+In `--debug-rollout-only` mode, readmission can use the engine-reported weight
+version when there is no completed trainer version. Normal training still
+requires the trainer's completed version, including its first update; once a
+trainer version is established it cannot be replaced by an absent one.
+The initial admission-status handshake tolerates a route-startup 404 within the
+control deadline. Missing routes after session establishment and mutation 404s
+remain errors.
