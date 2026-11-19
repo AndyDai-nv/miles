@@ -77,6 +77,7 @@ class FullyAsyncRolloutFn(BaseRolloutFn):
         assert self.args.buffer_filter_path is None, "fully-async rollout does not support buffer_filter_path"
         self.data_source = input.data_source
         self.state = GenerateState(input.args)
+        self.state.inference_controller_provider = input.inference_controller_provider
         # default to sample level backfill for fully async rollout
         self._scheduler = make_submission_scheduler(input.args, default="sample")
         assert input.args.async_unused_samples_handler in ("retry", "drop")

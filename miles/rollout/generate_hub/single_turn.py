@@ -9,6 +9,7 @@ from miles.rollout.generate_utils.generate_endpoint_utils import (
     compute_routing_headers,
     update_sample_from_response,
 )
+from miles.router.dynamo.api_client import post_generate
 from miles.utils.http_utils import post
 from miles.utils.types import Sample
 
@@ -46,7 +47,11 @@ async def generate(input: GenerateFnInput, url: str | None = None) -> GenerateFn
         sample.status = halt_status
         return GenerateFnOutput(samples=sample)
 
-    output = await post(url, payload, headers=compute_routing_headers(args, sample))
+    headers = compute_routing_headers(args, sample)
+    if args.dynamo_config is not None:
+        output = await post_generate(args, url, payload, headers=headers)
+    else:
+        output = await post(url, payload, headers=headers)
     await update_sample_from_response(args, sample, payload=payload, output=output)
 
     return GenerateFnOutput(samples=sample)
