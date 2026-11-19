@@ -2,6 +2,7 @@
 
 import enum
 import logging
+import os
 from abc import ABC, abstractmethod
 from argparse import Namespace
 from collections.abc import Sequence
@@ -14,6 +15,8 @@ from miles.backends.sglang_utils.router_args_utils import (
     router_args_to_argv,
 )
 from miles.router.config import compute_miles_router_config
+from miles.router.dynamo.config import Address
+from miles.router.dynamo.frontend import frontend_env, frontend_launch
 from miles.utils.http_utils import resolve_ip
 from miles.utils.workers.argv_utils import config_to_argv
 from miles.utils.workers.worker_spec import LaunchCommandContext, WorkerLaunchContext
@@ -28,6 +31,7 @@ logger = logging.getLogger(__name__)
 class RouterKind(str, enum.Enum):
     SGLANG = "sglang"
     MILES = "miles"
+    DYNAMO = "dynamo"
 
 
 @dataclass(frozen=True)
@@ -133,9 +137,31 @@ class MilesRouterBackend(RouterBackend):
         return False
 
 
+class DynamoRouterBackend(RouterBackend):
+    kind = RouterKind.DYNAMO
+    features = RouterFeatures(pd_disaggregation=False, routing_key_header=None)
+
+    def _router_routes_by_key(self, model_cfg: "ModelConfig | None") -> bool:
+        return False
+
+    def env_var(self, ctx: WorkerLaunchContext) -> dict[str, str]:
+        return frontend_env(self.args.dynamo_config, inherited_env=os.environ)
+
+    def _launch_argv(
+        self, ctx: LaunchCommandContext, *, model_cfg: "ModelConfig", interpreter_prefix: list[str]
+    ) -> list[str]:
+        primary = ctx.self_addrs["primary"]
+        return frontend_launch(
+            self.args.dynamo_config,
+            address=Address(host=primary.host.strip("[]"), port=primary.port),
+            interpreter_prefix=interpreter_prefix,
+        )
+
+
 _BACKEND_CLASSES: dict[RouterKind, type[RouterBackend]] = {
     RouterKind.SGLANG: SGLangRouterBackend,
     RouterKind.MILES: MilesRouterBackend,
+    RouterKind.DYNAMO: DynamoRouterBackend,
 }
 
 
